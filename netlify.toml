@@ -5,20 +5,24 @@
 [build.environment]
   NODE_VERSION = "18"
 
+# Configuration SPA pour React
 [[redirects]]
-  from = "/admin"
+  from = "/admin/*"
   to = "/index.html"
   status = 200
+  force = true
 
 [[redirects]]
-  from = "/client"
+  from = "/client/*"
   to = "/index.html"
   status = 200
+  force = true
 
 [[redirects]]
-  from "/*"
+  from = "/*"
   to = "/index.html"
   status = 200
+  force = true
 
 [context.production]
   command = "npm run build"

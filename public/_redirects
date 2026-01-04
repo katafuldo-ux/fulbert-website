@@ -1,0 +1,11 @@
+# Configuration des redirections pour Netlify
+# Assure que les routes /admin et /client fonctionnent correctement
+
+# Route Admin - redirige vers index.html avec le paramètre admin
+/admin/*    /index.html   200
+
+# Route Client - redirige vers index.html avec le paramètre client  
+/client/*    /index.html   200
+
+# Route racine - page d'accueil normale
+/*           /index.html   200
