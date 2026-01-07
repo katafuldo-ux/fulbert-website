@@ -29,3 +29,8 @@
 
 [context.deploy-preview]
   command = "npm run build"
+
+# Configuration des Netlify Functions
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"

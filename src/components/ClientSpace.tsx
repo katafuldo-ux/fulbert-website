@@ -23,17 +23,22 @@ import {
   Eye,
   Edit,
   Trash2,
-  ChevronRight
+  ChevronRight,
+  Lock,
+  Unlock,
+  Building,
+  MapPin
 } from 'lucide-react'
-import DataPersistence from '../utils/dataPersistence'
-import type { Client as ClientData, ServiceRequest as ServiceRequestData } from '../utils/dataPersistence'
+import { sanitizeInput, validateEmail, validatePhone } from '../utils/security'
+import AccountManager from '../utils/accountManager'
+import ApiService from '../utils/apiService'
+import dataPersistence from '../utils/dataPersistence'
 
 interface Client {
   id: string
   email: string
   fullName: string
   phone: string
-  domicile?: string
   company?: string
   address: string
   city: string
@@ -55,905 +60,40 @@ interface ServiceRequest {
   deadline?: string
   createdAt: string
   updatedAt: string
-  responses: ServiceResponse[]
-  documents?: Document[]
-}
-
-interface ServiceResponse {
-  id: string
-  message: string
-  sender: 'client' | 'admin'
-  createdAt: string
-  read: boolean
-  requestId?: string // Optionnel pour compatibilité
-}
-
-interface Document {
-  id: string
-  name: string
-  type: 'quote' | 'invoice' | 'contract' | 'report'
-  url: string
-  createdAt: string
-  status: 'draft' | 'sent' | 'signed' | 'paid'
+  responses: Array<{
+    id: string
+    message: string
+    sender: 'client' | 'admin'
+    createdAt: string
+    read: boolean
+  }>
 }
 
 export default function ClientSpace() {
-  const [currentClient, setCurrentClient] = useState<Client | null>(null)
-  const [requests, setRequests] = useState<ServiceRequest[]>([])
-  const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null)
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'messages' | 'documents' | 'profile'>('dashboard')
-  const [newMessage, setNewMessage] = useState('')
-  const [showNewRequestForm, setShowNewRequestForm] = useState(false)
-  const [searchTerm, setSearchTerm] = useState('')
-  const [filterStatus, setFilterStatus] = useState<string>('all')
-
-  useEffect(() => {
-    // Initialiser la migration des données et charger le client
-    DataPersistence.migrateOldData()
-    
-    const clientData = DataPersistence.getCurrentClient()
-    if (clientData) {
-      setCurrentClient(clientData)
-      loadClientRequests(clientData.id)
-    }
-  }, [])
-
-  const loadClientRequests = (clientId: string) => {
-    const clientRequests = DataPersistence.getServiceRequestsByClientId(clientId)
-    // Convertir ServiceRequestData en ServiceRequest pour compatibilité
-    const convertedRequests = clientRequests.map(req => ({
-      ...req,
-      responses: req.responses.map(resp => ({
-        id: resp.id,
-        message: resp.message,
-        sender: resp.sender,
-        createdAt: resp.createdAt,
-        read: resp.read,
-        requestId: resp.requestId || req.id // Ajouter requestId manquant
-      }))
-    }))
-    setRequests(convertedRequests)
-  }
-
-  const createNewRequest = (requestData: Partial<ServiceRequest>) => {
-    if (!currentClient) return
-
-    const newRequest: ServiceRequest = {
-      id: `REQ-${Date.now()}`,
-      clientId: currentClient.id,
-      type: requestData.type || 'service',
-      title: requestData.title || '',
-      description: requestData.description || '',
-      urgency: requestData.urgency || 'medium',
-      status: 'pending',
-      budget: requestData.budget,
-      deadline: requestData.deadline,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      responses: [],
-      documents: []
-    }
-
-    DataPersistence.addServiceRequest(newRequest)
-    loadClientRequests(currentClient.id)
-    setShowNewRequestForm(false)
-  }
-
-  const sendMessage = () => {
-    if (!newMessage.trim() || !currentClient) return
-
-    let request = selectedRequest
-    
-    // Si aucune demande n'est sélectionnée, créer une nouvelle demande de type "message"
-    if (!request) {
-      const newRequest: ServiceRequest = {
-        id: `REQ-${Date.now()}`,
-        clientId: currentClient.id,
-        type: 'service',
-        title: 'Message du client',
-        description: 'Conversation initiée par le client',
-        urgency: 'medium',
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        responses: []
-      }
-
-      DataPersistence.addServiceRequest(newRequest)
-      request = newRequest
-      setSelectedRequest(newRequest)
-      loadClientRequests(currentClient.id)
-    }
-
-    const response: ServiceResponse = {
-      id: `MSG-${Date.now()}`,
-      requestId: request.id,
-      message: newMessage,
-      sender: 'client',
-      createdAt: new Date().toISOString(),
-      read: false
-    }
-
-    const allRequests = DataPersistence.getServiceRequests()
-    const requestIndex = allRequests.findIndex((req: ServiceRequestData) => req.id === request.id)
-    
-    if (requestIndex !== -1) {
-      allRequests[requestIndex].responses.push(response)
-      allRequests[requestIndex].updatedAt = new Date().toISOString()
-      DataPersistence.saveServiceRequests(allRequests)
-      
-      const updatedRequest = allRequests[requestIndex]
-      setSelectedRequest(updatedRequest)
-      loadClientRequests(currentClient.id)
-      setNewMessage('')
-    }
-  }
-
-  const getTypeIcon = (type: string) => {
-    switch (type) {
-      case 'service': return <Wrench className="w-4 h-4" />
-      case 'contract': return <FileText className="w-4 h-4" />
-      case 'project': return <Briefcase className="w-4 h-4" />
-      case 'intervention': return <AlertCircle className="w-4 h-4" />
-      case 'quote': return <DollarSign className="w-4 h-4" />
-      case 'invoice': return <Receipt className="w-4 h-4" />
-      default: return <FileText className="w-4 h-4" />
-    }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'pending': return 'bg-yellow-100 text-yellow-800'
-      case 'in_progress': return 'bg-blue-100 text-blue-800'
-      case 'completed': return 'bg-green-100 text-green-800'
-      case 'cancelled': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const getUrgencyColor = (urgency: string) => {
-    switch (urgency) {
-      case 'low': return 'bg-green-100 text-green-800'
-      case 'medium': return 'bg-yellow-100 text-yellow-800'
-      case 'high': return 'bg-orange-100 text-orange-800'
-      case 'urgent': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
-    }
-  }
-
-  const filteredRequests = requests.filter(request => {
-    const matchesSearch = request.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         request.description.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesFilter = filterStatus === 'all' || request.status === filterStatus
-    return matchesSearch && matchesFilter
-  })
-
-  if (!currentClient) {
-    return <ClientLogin onLogin={(client) => setCurrentClient(client)} />
-  }
-
-  return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center space-x-4">
-              <div className="bg-blue-600 w-10 h-10 rounded-full flex items-center justify-center">
-                <User className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-xl font-semibold text-gray-900">Espace Client</h1>
-                <p className="text-sm text-gray-500">{currentClient.fullName}</p>
-              </div>
-            </div>
-            <button
-              onClick={() => {
-                localStorage.removeItem('currentClient')
-                setCurrentClient(null)
-              }}
-              className="flex items-center space-x-2 text-gray-600 hover:text-gray-900"
-            >
-              <LogOut className="w-4 h-4" />
-              <span>Déconnexion</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation Tabs */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex space-x-8">
-            {[
-              { id: 'dashboard', label: 'Tableau de bord', icon: <Settings className="w-4 h-4" /> },
-              { id: 'requests', label: 'Mes demandes', icon: <FileText className="w-4 h-4" /> },
-              { id: 'messages', label: 'Messages', icon: <MessageSquare className="w-4 h-4" /> },
-              { id: 'documents', label: 'Documents', icon: <Receipt className="w-4 h-4" /> },
-              { id: 'profile', label: 'Profil', icon: <User className="w-4 h-4" /> }
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === tab.id
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                {tab.icon}
-                <span>{tab.label}</span>
-              </button>
-            ))}
-          </nav>
-        </div>
-      </div>
-
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Dashboard Tab */}
-        {activeTab === 'dashboard' && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <div className="bg-white p-6 rounded-lg shadow">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Total demandes</p>
-                    <p className="text-2xl font-bold text-gray-900">{requests.length}</p>
-                  </div>
-                  <FileText className="w-8 h-8 text-blue-600" />
-                </div>
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">En cours</p>
-                    <p className="text-2xl font-bold text-blue-600">
-                      {requests.filter(r => r.status === 'in_progress').length}
-                    </p>
-                  </div>
-                  <Clock className="w-8 h-8 text-yellow-600" />
-                </div>
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Terminées</p>
-                    <p className="text-2xl font-bold text-green-600">
-                      {requests.filter(r => r.status === 'completed').length}
-                    </p>
-                  </div>
-                  <CheckCircle className="w-8 h-8 text-green-600" />
-                </div>
-              </div>
-              <div className="bg-white p-6 rounded-lg shadow">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Messages non lus</p>
-                    <p className="text-2xl font-bold text-red-600">
-                      {requests.reduce((acc, r) => acc + r.responses.filter(msg => !msg.read && msg.sender === 'admin').length, 0)}
-                    </p>
-                  </div>
-                  <MessageSquare className="w-8 h-8 text-red-600" />
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Demandes récentes</h3>
-              </div>
-              <div className="divide-y divide-gray-200">
-                {requests.slice(0, 5).map(request => (
-                  <div key={request.id} className="px-6 py-4 hover:bg-gray-50">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        {getTypeIcon(request.type)}
-                        <div>
-                          <p className="font-medium text-gray-900">{request.title}</p>
-                          <p className="text-sm text-gray-500">{new Date(request.createdAt).toLocaleDateString('fr-FR')}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(request.status)}`}>
-                          {request.status}
-                        </span>
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getUrgencyColor(request.urgency)}`}>
-                          {request.urgency}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Requests Tab */}
-        {activeTab === 'requests' && (
-          <div className="space-y-6">
-            <div className="flex justify-between items-center">
-              <h2 className="text-2xl font-bold text-gray-900">Mes demandes de service</h2>
-              <button
-                onClick={() => setShowNewRequestForm(true)}
-                className="flex items-center space-x-2 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Nouvelle demande</span>
-              </button>
-            </div>
-
-            {/* Filters */}
-            <div className="bg-white p-4 rounded-lg shadow flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <input
-                    type="text"
-                    placeholder="Rechercher une demande..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-              </div>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="all">Tous les statuts</option>
-                <option value="pending">En attente</option>
-                <option value="in_progress">En cours</option>
-                <option value="completed">Terminé</option>
-                <option value="cancelled">Annulé</option>
-              </select>
-            </div>
-
-            {/* Requests List */}
-            <div className="bg-white rounded-lg shadow divide-y divide-gray-200">
-              {filteredRequests.map(request => (
-                <div key={request.id} className="p-6 hover:bg-gray-50">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center space-x-3 mb-2">
-                        {getTypeIcon(request.type)}
-                        <h3 className="text-lg font-medium text-gray-900">{request.title}</h3>
-                      </div>
-                      <p className="text-gray-600 mb-3">{request.description}</p>
-                      <div className="flex flex-wrap gap-2 mb-3">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(request.status)}`}>
-                          {request.status}
-                        </span>
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getUrgencyColor(request.urgency)}`}>
-                          {request.urgency}
-                        </span>
-                        {request.budget && (
-                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">
-                            Budget: {request.budget}
-                          </span>
-                        )}
-                        {request.deadline && (
-                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-blue-100 text-blue-800">
-                            Deadline: {new Date(request.deadline).toLocaleDateString('fr-FR')}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center space-x-4 text-sm text-gray-500">
-                        <span>Créée le {new Date(request.createdAt).toLocaleDateString('fr-FR')}</span>
-                        <span>•</span>
-                        <span>{request.responses.length} messages</span>
-                        {request.responses.some(msg => !msg.read && msg.sender === 'admin') && (
-                          <span className="text-red-600 font-medium">Nouveaux messages</span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex space-x-2">
-                      <button
-                        onClick={() => setSelectedRequest(request)}
-                        className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Messages Tab */}
-        {activeTab === 'messages' && (
-          <div className="space-y-6">
-            {!selectedRequest ? (
-              <div>
-                <div className="flex justify-between items-center mb-6">
-                  <h2 className="text-2xl font-bold text-gray-900">Messages</h2>
-                  <button
-                    onClick={() => {
-                      // Créer une nouvelle conversation
-                      const newRequest: ServiceRequest = {
-                        id: `REQ-${Date.now()}`,
-                        clientId: currentClient.id,
-                        type: 'service',
-                        title: 'Nouvelle conversation',
-                        description: 'Conversation initiée par le client',
-                        urgency: 'medium',
-                        status: 'pending',
-                        createdAt: new Date().toISOString(),
-                        updatedAt: new Date().toISOString(),
-                        responses: []
-                      }
-                      
-                      const allRequests = JSON.parse(localStorage.getItem('serviceRequests') || '[]')
-                      allRequests.push(newRequest)
-                      localStorage.setItem('serviceRequests', JSON.stringify(allRequests))
-                      
-                      setSelectedRequest(newRequest)
-                      loadClientRequests(currentClient.id)
-                    }}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                  >
-                    Nouvelle conversation
-                  </button>
-                </div>
-                <div className="bg-white rounded-lg shadow divide-y divide-gray-200">
-                  {requests.filter(request => request.responses.length > 0).map(request => (
-                    <div key={request.id} className="p-6 hover:bg-gray-50">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
-                          <div className="flex items-center space-x-3 mb-2">
-                            {getTypeIcon(request.type)}
-                            <h3 className="text-lg font-medium text-gray-900">{request.title}</h3>
-                          </div>
-                          <p className="text-gray-600 mb-3">{request.description}</p>
-                          <div className="flex items-center space-x-4">
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(request.status)}`}>
-                              {request.status}
-                            </span>
-                            <span className="text-sm text-gray-500">
-                              {request.responses.length} messages
-                            </span>
-                            {request.responses.some(msg => !msg.read && msg.sender === 'admin') && (
-                              <span className="text-red-600 font-medium">Nouveaux messages</span>
-                            )}
-                            <span className="text-sm text-gray-500">
-                              Dernier message: {new Date(Math.max(...request.responses.map(r => new Date(r.createdAt).getTime()))).toLocaleDateString('fr-FR')}
-                            </span>
-                          </div>
-                        </div>
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => setSelectedRequest(request)}
-                            className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg"
-                          >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {requests.filter(request => request.responses.length > 0).length === 0 && (
-                    <div className="p-6 text-center text-gray-500">
-                      <p className="mb-4">Aucune conversation pour le moment</p>
-                      <button
-                        onClick={() => {
-                          const newRequest: ServiceRequest = {
-                            id: `REQ-${Date.now()}`,
-                            clientId: currentClient.id,
-                            type: 'service',
-                            title: 'Première conversation',
-                            description: 'Conversation initiée par le client',
-                            urgency: 'medium',
-                            status: 'pending',
-                            createdAt: new Date().toISOString(),
-                            updatedAt: new Date().toISOString(),
-                            responses: []
-                          }
-                          
-                          const allRequests = JSON.parse(localStorage.getItem('serviceRequests') || '[]')
-                          allRequests.push(newRequest)
-                          localStorage.setItem('serviceRequests', JSON.stringify(allRequests))
-                          
-                          setSelectedRequest(newRequest)
-                          loadClientRequests(currentClient.id)
-                        }}
-                        className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                      >
-                        Commencer une conversation
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="bg-white rounded-lg shadow">
-                <div className="border-b border-gray-200 px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-lg font-medium text-gray-900">{selectedRequest.title}</h3>
-                      <p className="text-sm text-gray-500">Demande #{selectedRequest.id}</p>
-                    </div>
-                    <button
-                      onClick={() => setSelectedRequest(null)}
-                      className="text-gray-400 hover:text-gray-600"
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-                
-                <div className="h-96 overflow-y-auto p-6 space-y-4">
-                  {selectedRequest.responses.map(response => (
-                    <div
-                      key={response.id}
-                      className={`flex ${response.sender === 'client' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        className={`max-w-xs px-4 py-2 rounded-lg ${
-                          response.sender === 'client'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-900'
-                        }`}
-                      >
-                        <p>{response.message}</p>
-                        <p className={`text-xs mt-1 ${response.sender === 'client' ? 'text-blue-100' : 'text-gray-500'}`}>
-                          {new Date(response.createdAt).toLocaleString('fr-FR')}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-                  {selectedRequest.responses.length === 0 && (
-                    <div className="text-center text-gray-500 py-8">
-                      <p>Aucun message dans cette conversation</p>
-                      <p className="text-sm">Envoyez votre premier message ci-dessous</p>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="border-t border-gray-200 px-6 py-4">
-                  <div className="flex space-x-2">
-                    <input
-                      type="text"
-                      placeholder="Tapez votre message..."
-                      value={newMessage}
-                      onChange={(e) => setNewMessage(e.target.value)}
-                      onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
-                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    />
-                    <button
-                      onClick={sendMessage}
-                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Documents Tab */}
-        {activeTab === 'documents' && (
-          <div className="space-y-6">
-            <h2 className="text-2xl font-bold text-gray-900">Mes documents</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {[
-                { type: 'quote', title: 'Devis', count: 0, icon: <DollarSign className="w-6 h-6" /> },
-                { type: 'invoice', title: 'Factures', count: 0, icon: <Receipt className="w-6 h-6" /> },
-                { type: 'contract', title: 'Contrats', count: 0, icon: <FileText className="w-6 h-6" /> }
-              ].map(docType => (
-                <div key={docType.type} className="bg-white p-6 rounded-lg shadow hover:shadow-lg transition-shadow">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="bg-blue-100 p-3 rounded-lg text-blue-600">
-                      {docType.icon}
-                    </div>
-                    <span className="text-2xl font-bold text-gray-900">{docType.count}</span>
-                  </div>
-                  <h3 className="font-medium text-gray-900">{docType.title}</h3>
-                  <p className="text-sm text-gray-500 mt-2">Aucun document pour le moment</p>
-                </div>
-              ))}
-            </div>
-            <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
-              <h3 className="text-lg font-medium text-blue-900 mb-2">📋 Gestion des documents</h3>
-              <p className="text-blue-700 mb-4">
-                Les documents (devis, factures, contrats) seront ajoutés par l'administrateur 
-                et apparaîtront ici dès qu'ils seront disponibles.
-              </p>
-              <div className="space-y-2 text-sm text-blue-600">
-                <p>• Les devis sont créés lors de vos demandes de service</p>
-                <p>• Les factures sont générées après validation des prestations</p>
-                <p>• Les contrats sont établis pour les services récurrents</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Profile Tab */}
-        {activeTab === 'profile' && (
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-lg shadow">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Informations du profil</h3>
-              </div>
-              <div className="p-6 space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Nom complet</label>
-                    <p className="text-gray-900">{currentClient.fullName}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-                    <p className="text-gray-900">{currentClient.email}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
-                    <p className="text-gray-900">{currentClient.phone}</p>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Entreprise</label>
-                    <p className="text-gray-900">{currentClient.company || 'Non spécifié'}</p>
-                  </div>
-                  <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label>
-                    <p className="text-gray-900">{currentClient.address}, {currentClient.city}, {currentClient.country}</p>
-                  </div>
-                </div>
-                <div className="pt-6 border-t border-gray-200">
-                  <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">
-                    Modifier les informations
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* New Request Modal */}
-      {showNewRequestForm && (
-        <NewRequestForm
-          onClose={() => setShowNewRequestForm(false)}
-          onSubmit={createNewRequest}
-        />
-      )}
-    </div>
-  )
-}
-
-// Client Login Component
-function ClientLogin({ onLogin }: { onLogin: (client: Client) => void }) {
-  const [email, setEmail] = useState('')
-  const [isRegistering, setIsRegistering] = useState(false)
+  const [currentUser, setCurrentUser] = useState<Client | null>(null)
+  const [isCreatingAccount, setIsCreatingAccount] = useState(false)
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [showLoginForm, setShowLoginForm] = useState(true)
+  const [activeForm, setActiveForm] = useState<'login' | 'register'>('login')
   const [formData, setFormData] = useState({
     fullName: '',
+    email: '',
     phone: '',
-    domicile: '',
     company: '',
     address: '',
     city: '',
-    country: 'Togo'
+    country: 'Togo',
+    password: '',
+    confirmPassword: ''
   })
-  const [error, setError] = useState('')
-
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    // Vérifier que l'email se termine par @Ful-Asky.com
-    if (!email.endsWith('@Ful-Asky.com')) {
-      setError('Seuls les emails @Ful-Asky.com sont autorisés.')
-      return
-    }
-    
-    let client = DataPersistence.getClientByEmail(email)
-    
-    if (!client) {
-      // Créer automatiquement le client s'il n'existe pas
-      client = {
-        id: `CLI-${Date.now()}`,
-        email,
-        fullName: email.split('@')[0], // Utiliser la partie avant @ comme nom
-        phone: '',
-        company: '',
-        address: '',
-        city: '',
-        country: 'Togo',
-        createdAt: new Date().toISOString(),
-        lastLogin: new Date().toISOString(),
-        status: 'active'
-      }
-      
-      DataPersistence.addClient(client)
-    }
-    
-    DataPersistence.setCurrentClient(client)
-    onLogin(client)
-  }
-
-  const handleRegister = (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    // Vérifier que l'email se termine par @Ful-Asky.com
-    if (!email.endsWith('@Ful-Asky.com')) {
-      setError('Seuls les emails @Ful-Asky.com sont autorisés.')
-      return
-    }
-    
-    const existingClient = DataPersistence.getClientByEmail(email)
-    
-    if (existingClient) {
-      setError('Un compte avec cet email existe déjà.')
-      return
-    }
-
-    const newClient: Client = {
-      id: `CLI-${Date.now()}`,
-      email,
-      fullName: formData.fullName,
-      phone: formData.phone,
-      company: formData.company,
-      address: formData.address,
-      city: formData.city,
-      country: formData.country,
-      createdAt: new Date().toISOString(),
-      lastLogin: new Date().toISOString(),
-      status: 'active'
-    }
-
-    DataPersistence.addClient(newClient)
-    DataPersistence.setCurrentClient(newClient)
-    onLogin(newClient)
-  }
-
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="bg-blue-600 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            <User className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">
-            {isRegistering ? 'Créer un compte' : 'Espace Client'}
-          </h1>
-          <p className="text-gray-600">
-            {isRegistering ? 'Rejoignez notre espace client' : 'Accédez à votre espace client'}
-          </p>
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={isRegistering ? handleRegister : handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Email @Ful-Asky.com</label>
-            <div className="relative">
-              <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="votrenom@Ful-Asky.com"
-              />
-            </div>
-            <p className="text-xs text-gray-500 mt-1">
-              Uniquement les adresses @Ful-Asky.com sont acceptées
-            </p>
-          </div>
-
-          {!isRegistering ? (
-            <button
-              type="submit"
-              className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Accéder à l'espace client
-            </button>
-          ) : (
-            <>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Nom complet</label>
-                <input
-                  type="text"
-                  value={formData.fullName}
-                  onChange={(e) => setFormData({...formData, fullName: e.target.value})}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Votre nom complet"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Téléphone</label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <input
-                    type="tel"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
-                    required
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="+228 XX XX XX XX"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Numéro domicile</label>
-                <div className="relative">
-                  <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-                  <input
-                    type="tel"
-                    value={formData.domicile}
-                    onChange={(e) => setFormData({...formData, domicile: e.target.value})}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    placeholder="XX XX XX XX"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Entreprise (optionnel)</label>
-                <input
-                  type="text"
-                  value={formData.company}
-                  onChange={(e) => setFormData({...formData, company: e.target.value})}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Nom de votre entreprise"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Adresse</label>
-                <input
-                  type="text"
-                  value={formData.address}
-                  onChange={(e) => setFormData({...formData, address: e.target.value})}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Votre adresse complète"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ville</label>
-                <input
-                  type="text"
-                  value={formData.city}
-                  onChange={(e) => setFormData({...formData, city: e.target.value})}
-                  required
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Votre ville"
-                />
-              </div>
-              <button
-                type="submit"
-                className="w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Créer mon compte
-              </button>
-            </>
-          )}
-        </form>
-
-        <div className="mt-6 text-center">
-          <button
-            onClick={() => setIsRegistering(!isRegistering)}
-            className="text-blue-600 hover:text-blue-700 text-sm"
-          >
-            {isRegistering ? 'Déjà un compte ? Se connecter' : 'Pas de compte ? Créer un compte'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// New Request Form Component
-function NewRequestForm({ onClose, onSubmit }: { onClose: () => void, onSubmit: (data: any) => void }) {
-  const [formData, setFormData] = useState({
+  const [loginForm, setLoginForm] = useState({
+    email: '',
+    password: ''
+  })
+  const [requests, setRequests] = useState<ServiceRequest[]>([])
+  const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null)
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'requests' | 'responses' | 'profile'>('dashboard')
+  const [newRequestForm, setNewRequestForm] = useState({
     type: 'service' as const,
     title: '',
     description: '',
@@ -961,119 +101,801 @@ function NewRequestForm({ onClose, onSubmit }: { onClose: () => void, onSubmit: 
     budget: '',
     deadline: ''
   })
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    checkExistingSession()
+  }, [])
+
+  const checkExistingSession = () => {
+    const sessionData = localStorage.getItem('clientSession')
+    if (sessionData) {
+      try {
+        const session = JSON.parse(sessionData)
+        if (session.expiresAt > Date.now()) {
+          setCurrentUser(session.client)
+          loadClientRequests(session.client.id)
+        } else {
+          localStorage.removeItem('clientSession')
+        }
+      } catch (error) {
+        localStorage.removeItem('clientSession')
+      }
+    }
+  }
+
+  const loadClientRequests = async (clientId: string) => {
+    try {
+      // Utiliser l'API pour charger les demandes du client
+      const allRequests = await ApiService.getClientRequests();
+      const clientRequests = allRequests.filter((req: ServiceRequest) => req.clientId === clientId);
+      setRequests(clientRequests);
+    } catch (error) {
+      console.error('Erreur lors du chargement des demandes:', error);
+      // Fallback sur localStorage
+      try {
+        const storedData = localStorage.getItem('clientRequests');
+        if (storedData) {
+          const parsedData = JSON.parse(storedData);
+          const clientRequests = parsedData.filter((req: ServiceRequest) => req.clientId === clientId);
+          setRequests(clientRequests);
+        }
+      } catch (fallbackError) {
+        console.error('Erreur lors du fallback:', fallbackError);
+      }
+    }
+  }
+
+  const handleCreateAccount = async (e: React.FormEvent) => {
     e.preventDefault()
-    onSubmit(formData)
+    setIsCreatingAccount(true)
+
+    // Validation
+    if (!validateEmail(formData.email)) {
+      setSubmitStatus('error')
+      setTimeout(() => setSubmitStatus('idle'), 3000)
+      setIsCreatingAccount(false)
+      return
+    }
+
+    if (formData.password !== formData.confirmPassword) {
+      setSubmitStatus('error')
+      setTimeout(() => setSubmitStatus('idle'), 3000)
+      setIsCreatingAccount(false)
+      return
+    }
+
+    if (formData.password.length < 6) {
+      setSubmitStatus('error')
+      setTimeout(() => setSubmitStatus('idle'), 3000)
+      setIsCreatingAccount(false)
+      return
+    }
+
+    try {
+      // Créer le compte client
+      const account = AccountManager.createAccount(
+        formData.email,
+        formData.fullName,
+        formData.phone
+      )
+
+      const clientData: Client = {
+        id: account.id,
+        email: formData.email,
+        fullName: formData.fullName,
+        phone: formData.phone,
+        company: formData.company,
+        address: formData.address,
+        city: formData.city,
+        country: formData.country,
+        createdAt: account.createdAt,
+        lastLogin: account.lastLogin,
+        status: 'active'
+      }
+
+      // Sauvegarder le client via l'API
+      await ApiService.saveClient(clientData);
+      
+      // Aussi sauvegarder en localStorage pour fallback
+      const clients = JSON.parse(localStorage.getItem('clients') || '[]')
+      clients.push(clientData)
+      localStorage.setItem('clients', JSON.stringify(clients))
+
+      // Créer la session
+      const sessionData = {
+        client: clientData,
+        loginTime: Date.now(),
+        expiresAt: Date.now() + (24 * 60 * 60 * 1000) // 24 heures
+      }
+      localStorage.setItem('clientSession', JSON.stringify(sessionData))
+
+      setCurrentUser(clientData)
+      setShowLoginForm(false)
+      setSubmitStatus('success')
+      
+      // Reset form
+      setFormData({
+        fullName: '',
+        email: '',
+        phone: '',
+        company: '',
+        address: '',
+        city: '',
+        country: 'Togo',
+        password: '',
+        confirmPassword: ''
+      })
+
+      setTimeout(() => {
+        setSubmitStatus('idle')
+      }, 3000)
+    } catch (error) {
+      console.error('Erreur lors de la création du compte:', error)
+      setSubmitStatus('error')
+      setTimeout(() => setSubmitStatus('idle'), 3000)
+    } finally {
+      setIsCreatingAccount(false)
+    }
+  }
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoggingIn(true)
+
+    try {
+      const clients = JSON.parse(localStorage.getItem('clients') || '[]')
+      const client = clients.find((c: Client) => c.email === loginForm.email)
+
+      if (client) {
+        // Mettre à jour la connexion
+        AccountManager.recordLogin(client.id);
+        
+        // Créer la session
+        const sessionData = {
+          client: client,
+          loginTime: Date.now(),
+          expiresAt: Date.now() + (24 * 60 * 60 * 1000) // 24 heures
+        }
+        localStorage.setItem('clientSession', JSON.stringify(sessionData))
+
+        setCurrentUser(client)
+        setShowLoginForm(false)
+        loadClientRequests(client.id)
+        setSubmitStatus('success')
+        
+        setLoginForm({ email: '', password: '' })
+        setTimeout(() => {
+          setSubmitStatus('idle')
+        }, 3000)
+      } else {
+        setSubmitStatus('error')
+        setTimeout(() => setSubmitStatus('idle'), 3000)
+      }
+    } catch (error) {
+      console.error('Erreur lors de la connexion:', error)
+      setSubmitStatus('error')
+      setTimeout(() => setSubmitStatus('idle'), 3000)
+    } finally {
+      setIsLoggingIn(false)
+    }
+  }
+
+  const handleLogout = () => {
+    localStorage.removeItem('clientSession')
+    setCurrentUser(null)
+    setShowLoginForm(true)
+    setActiveTab('dashboard')
+  }
+
+  const handleCreateRequest = async (e: React.FormEvent) => {
+    e.preventDefault()
+
+    if (!currentUser) return
+
+    const newRequest: ServiceRequest = {
+      id: Date.now().toString(),
+      clientId: currentUser.id,
+      type: newRequestForm.type,
+      title: sanitizeInput(newRequestForm.title),
+      description: sanitizeInput(newRequestForm.description),
+      urgency: newRequestForm.urgency,
+      status: 'pending',
+      budget: newRequestForm.budget,
+      deadline: newRequestForm.deadline,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      responses: []
+    }
+
+    try {
+      // Sauvegarder via l'API
+      await ApiService.saveClientRequest(newRequest);
+      
+      // Mettre à jour l'état local
+      const updatedRequests = [...requests, newRequest];
+      setRequests(updatedRequests);
+      
+      setNewRequestForm({
+        type: 'service',
+        title: '',
+        description: '',
+        urgency: 'medium',
+        budget: '',
+        deadline: ''
+      });
+      setActiveTab('requests');
+      setSubmitStatus('success');
+      setTimeout(() => setSubmitStatus('idle'), 3000);
+    } catch (error) {
+      console.error('Erreur lors de la création de la demande:', error);
+      setSubmitStatus('error');
+      setTimeout(() => setSubmitStatus('idle'), 3000);
+    }
+  }
+
+  if (showLoginForm) {
+    return (
+      <div className="min-h-screen bg-gray-50 py-12 px-4">
+        <div className="max-w-md mx-auto">
+          <div className="bg-white rounded-xl shadow-lg p-8">
+            <div className="text-center mb-8">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">Espace Client</h1>
+              <p className="text-gray-600">FULBERT-ASKY-INGÉNIERIE</p>
+            </div>
+
+            {submitStatus === 'success' && (
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-6">
+                Opération réussie !
+              </div>
+            )}
+
+            {submitStatus === 'error' && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6">
+                Erreur. Veuillez vérifier vos informations.
+              </div>
+            )}
+
+            <div className="flex mb-6">
+              <button
+                onClick={() => setActiveForm('login')}
+                className={`flex-1 py-2 text-center font-medium ${
+                  activeForm === 'login'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-500 border-b-2 border-transparent'
+                }`}
+              >
+                Connexion
+              </button>
+              <button
+                onClick={() => setActiveForm('register')}
+                className={`flex-1 py-2 text-center font-medium ${
+                  activeForm === 'register'
+                    ? 'text-blue-600 border-b-2 border-blue-600'
+                    : 'text-gray-500 border-b-2 border-transparent'
+                }`}
+              >
+                Créer un compte
+              </button>
+            </div>
+
+            {activeForm === 'login' ? (
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Email professionnel
+                  </label>
+                  <input
+                    type="email"
+                    value={loginForm.email}
+                    onChange={(e) => setLoginForm({...loginForm, email: e.target.value})}
+                    required
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="email@entreprise.com"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Mot de passe
+                  </label>
+                  <input
+                    type="password"
+                    value={loginForm.password}
+                    onChange={(e) => setLoginForm({...loginForm, password: e.target.value})}
+                    required
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="••••••••"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isLoggingIn}
+                  className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
+                >
+                  {isLoggingIn ? 'Connexion...' : 'Se connecter'}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleCreateAccount} className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Nom complet *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.fullName}
+                    onChange={(e) => setFormData({...formData, fullName: e.target.value})}
+                    required
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Votre nom"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Email professionnel *
+                  </label>
+                  <input
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({...formData, email: e.target.value})}
+                    required
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="email@entreprise.com"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Téléphone
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="+228 XX XX XX XX"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Entreprise
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.company}
+                    onChange={(e) => setFormData({...formData, company: e.target.value})}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Nom de votre entreprise"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Mot de passe *
+                  </label>
+                  <input
+                    type="password"
+                    value={formData.password}
+                    onChange={(e) => setFormData({...formData, password: e.target.value})}
+                    required
+                    minLength={6}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Min 6 caractères"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Confirmer le mot de passe *
+                  </label>
+                  <input
+                    type="password"
+                    value={formData.confirmPassword}
+                    onChange={(e) => setFormData({...formData, confirmPassword: e.target.value})}
+                    required
+                    minLength={6}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Confirmer le mot de passe"
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={isCreatingAccount}
+                  className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
+                >
+                  {isCreatingAccount ? 'Création...' : 'Créer mon compte'}
+                </button>
+              </form>
+            )}
+
+            <div className="mt-6 text-center">
+              <a href="/" className="text-blue-600 hover:text-blue-700 text-sm">
+                ← Retour à l'accueil
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Nouvelle demande de service</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            ×
-          </button>
+    <div className="min-h-screen bg-gray-50 py-12 px-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="bg-white rounded-xl shadow-lg p-8 mb-8">
+          <div className="flex justify-between items-center mb-8">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Espace Client</h1>
+              <p className="text-gray-600">Bienvenue, {currentUser?.fullName || 'Client'}</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="flex items-center gap-2 px-6 py-3 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+            >
+              <LogOut className="w-5 h-5" />
+              Se déconnecter
+            </button>
+          </div>
+
+          <div className="flex space-x-1 mb-8">
+            <button
+              onClick={() => setActiveTab('dashboard')}
+              className={`px-4 py-2 rounded-lg font-medium ${
+                activeTab === 'dashboard'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              Tableau de bord
+            </button>
+            <button
+              onClick={() => setActiveTab('requests')}
+              className={`px-4 py-2 rounded-lg font-medium ${
+                activeTab === 'requests'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              Mes demandes
+            </button>
+            <button
+              onClick={() => setActiveTab('responses')}
+              className={`px-4 py-2 rounded-lg font-medium ${
+                activeTab === 'responses'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              Réponses
+            </button>
+            <button
+              onClick={() => setActiveTab('profile')}
+              className={`px-4 py-2 rounded-lg font-medium ${
+                activeTab === 'profile'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              Mon profil
+            </button>
+          </div>
+
+          {activeTab === 'dashboard' && (
+            <div>
+              <div className="grid md:grid-cols-3 gap-6 mb-8">
+                <div className="bg-blue-50 p-6 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <FileText className="w-8 h-8 text-blue-600" />
+                    <span className="text-2xl font-bold text-blue-600">{requests.length}</span>
+                  </div>
+                  <p className="text-gray-700">Demandes totales</p>
+                </div>
+                <div className="bg-green-50 p-6 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <CheckCircle className="w-8 h-8 text-green-600" />
+                    <span className="text-2xl font-bold text-green-600">
+                      {requests.filter(r => r.status === 'completed').length}
+                    </span>
+                  </div>
+                  <p className="text-gray-700">Demandes terminées</p>
+                </div>
+                <div className="bg-yellow-50 p-6 rounded-lg">
+                  <div className="flex items-center justify-between mb-2">
+                    <Clock className="w-8 h-8 text-yellow-600" />
+                    <span className="text-2xl font-bold text-yellow-600">
+                      {requests.filter(r => r.status === 'pending').length}
+                    </span>
+                  </div>
+                  <p className="text-gray-700">En attente</p>
+                </div>
+              </div>
+
+              <div className="bg-gray-50 p-6 rounded-lg">
+                <h2 className="text-xl font-semibold mb-4">Créer une nouvelle demande</h2>
+                {submitStatus === 'success' && (
+                  <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4">
+                    Demande créée avec succès !
+                  </div>
+                )}
+                <form onSubmit={handleCreateRequest} className="space-y-4">
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Type de demande
+                      </label>
+                      <select
+                        value={newRequestForm.type}
+                        onChange={(e) => setNewRequestForm({...newRequestForm, type: e.target.value as any})}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="service">Service</option>
+                        <option value="contract">Contrat</option>
+                        <option value="project">Projet</option>
+                        <option value="intervention">Intervention</option>
+                        <option value="quote">Devis</option>
+                        <option value="invoice">Facture</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Urgence
+                      </label>
+                      <select
+                        value={newRequestForm.urgency}
+                        onChange={(e) => setNewRequestForm({...newRequestForm, urgency: e.target.value as any})}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      >
+                        <option value="low">Faible</option>
+                        <option value="medium">Moyenne</option>
+                        <option value="high">Élevée</option>
+                        <option value="urgent">Urgente</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Titre de la demande
+                    </label>
+                    <input
+                      type="text"
+                      value={newRequestForm.title}
+                      onChange={(e) => setNewRequestForm({...newRequestForm, title: e.target.value})}
+                      required
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Titre de votre demande"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Description
+                    </label>
+                    <textarea
+                      value={newRequestForm.description}
+                      onChange={(e) => setNewRequestForm({...newRequestForm, description: e.target.value})}
+                      required
+                      rows={4}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      placeholder="Décrivez votre demande en détail..."
+                    />
+                  </div>
+                  <div className="grid md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Budget (optionnel)
+                      </label>
+                      <input
+                        type="text"
+                        value={newRequestForm.budget}
+                        onChange={(e) => setNewRequestForm({...newRequestForm, budget: e.target.value})}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        placeholder="Ex: 500000 FCFA"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Délai (optionnel)
+                      </label>
+                      <input
+                        type="date"
+                        value={newRequestForm.deadline}
+                        onChange={(e) => setNewRequestForm({...newRequestForm, deadline: e.target.value})}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  >
+                    Créer la demande
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'requests' && (
+            <div>
+              <h2 className="text-xl font-semibold mb-6">Mes demandes</h2>
+              {requests.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">
+                  Vous n'avez pas encore de demande.
+                </p>
+              ) : (
+                <div className="space-y-4">
+                  {requests.map((request) => (
+                    <div key={request.id} className="border border-gray-200 rounded-lg p-4">
+                      <div className="flex justify-between items-start mb-2">
+                        <div>
+                          <h3 className="font-semibold text-gray-900">{request.title}</h3>
+                          <p className="text-sm text-gray-600">{request.type}</p>
+                        </div>
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                          request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                          request.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                          request.status === 'completed' ? 'bg-green-100 text-green-800' :
+                          'bg-red-100 text-red-800'
+                        }`}>
+                          {request.status === 'pending' ? 'En attente' :
+                           request.status === 'in_progress' ? 'En cours' :
+                           request.status === 'completed' ? 'Terminé' : 'Annulé'}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 mb-2">{request.description}</p>
+                      <p className="text-sm text-gray-600">
+                        Créée le: {new Date(request.createdAt).toLocaleDateString('fr-TG')}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'responses' && (
+            <div>
+              <h2 className="text-xl font-semibold mb-6">Réponses de l'administration</h2>
+              <div className="space-y-4">
+                {requests.filter(req => req.responses && req.responses.length > 0).map((request) => (
+                  <div key={request.id} className="border border-gray-200 rounded-lg p-4">
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <h3 className="font-semibold text-gray-900">{request.title}</h3>
+                        <p className="text-sm text-gray-600">{request.type}</p>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                        request.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                        request.status === 'in_progress' ? 'bg-blue-100 text-blue-800' :
+                        request.status === 'completed' ? 'bg-green-100 text-green-800' :
+                        'bg-red-100 text-red-800'
+                      }`}>
+                        {request.status === 'pending' ? 'En attente' :
+                         request.status === 'in_progress' ? 'En cours' :
+                         request.status === 'completed' ? 'Terminé' : 'Annulé'}
+                      </span>
+                    </div>
+                    
+                    <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                      <p className="text-sm text-gray-700 mb-2">{request.description}</p>
+                      <p className="text-xs text-gray-500">
+                        Demandé le: {new Date(request.createdAt).toLocaleDateString('fr-TG')}
+                      </p>
+                    </div>
+
+                    <div className="space-y-3">
+                      <h4 className="text-sm font-semibold text-gray-900">Réponses de l'administration:</h4>
+                      {request.responses.map((response) => (
+                        <div key={response.id} className={`rounded-lg p-3 ${
+                          response.sender === 'admin' 
+                            ? 'bg-blue-50 border-l-4 border-blue-500' 
+                            : 'bg-gray-100 border-l-4 border-gray-400'
+                        }`}>
+                          <div className="flex justify-between items-start mb-2">
+                            <span className={`text-xs font-medium ${
+                              response.sender === 'admin' ? 'text-blue-700' : 'text-gray-600'
+                            }`}>
+                              {response.sender === 'admin' ? 'Administration' : 'Vous'}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              {new Date(response.createdAt).toLocaleString('fr-TG')}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-700">{response.message}</p>
+                          {response.sender === 'admin' && !response.read && (
+                            <div className="mt-2">
+                              <span className="inline-flex items-center px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Nouveau
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    <div className="mt-4 flex gap-2">
+                      <button className="px-3 py-1 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition-colors">
+                        Répondre
+                      </button>
+                      <button className="px-3 py-1 bg-gray-200 text-gray-700 text-sm rounded-lg hover:bg-gray-300 transition-colors">
+                        Marquer comme lu
+                      </button>
+                    </div>
+                  </div>
+                ))}
+                
+                {requests.filter(req => req.responses && req.responses.length > 0).length === 0 && (
+                  <div className="text-center py-8">
+                    <MessageSquare className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                    <p className="text-gray-500">Aucune réponse de l'administration pour le moment.</p>
+                    <p className="text-sm text-gray-400 mt-2">
+                      Les réponses apparaîtront ici dès que l'administration répondra à vos demandes.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'profile' && (
+            <div>
+              <h2 className="text-xl font-semibold mb-6">Mon profil</h2>
+              <div className="bg-gray-50 p-6 rounded-lg">
+                <div className="grid md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Nom complet
+                    </label>
+                    <p className="text-gray-900">{currentUser?.fullName || 'Non renseigné'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Email
+                    </label>
+                    <p className="text-gray-900">{currentUser?.email || 'Non renseigné'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Téléphone
+                    </label>
+                    <p className="text-gray-900">{currentUser?.phone || 'Non renseigné'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Entreprise
+                    </label>
+                    <p className="text-gray-900">{currentUser?.company || 'Non renseigné'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Adresse
+                    </label>
+                    <p className="text-gray-900">{currentUser?.address || 'Non renseigné'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Ville
+                    </label>
+                    <p className="text-gray-900">{currentUser?.city || 'Non renseigné'}</p>
+                  </div>
+                </div>
+                <div className="mt-6 pt-6 border-t border-gray-200">
+                  <p className="text-sm text-gray-600">
+                    Compte créé le: {currentUser?.createdAt ? new Date(currentUser.createdAt).toLocaleDateString('fr-TG') : 'Non renseigné'}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    Dernière connexion: {currentUser?.lastLogin ? new Date(currentUser.lastLogin).toLocaleDateString('fr-TG') : 'Non renseigné'}
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Type de demande</label>
-            <select
-              value={formData.type}
-              onChange={(e) => setFormData({...formData, type: e.target.value as any})}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="service">Service</option>
-              <option value="contract">Contrat</option>
-              <option value="project">Projet</option>
-              <option value="intervention">Intervention</option>
-              <option value="quote">Devis</option>
-              <option value="invoice">Facture</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Titre</label>
-            <input
-              type="text"
-              value={formData.title}
-              onChange={(e) => setFormData({...formData, title: e.target.value})}
-              required
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Titre de votre demande"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Description</label>
-            <textarea
-              value={formData.description}
-              onChange={(e) => setFormData({...formData, description: e.target.value})}
-              required
-              rows={4}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              placeholder="Décrivez votre demande en détail..."
-            />
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Urgence</label>
-              <select
-                value={formData.urgency}
-                onChange={(e) => setFormData({...formData, urgency: e.target.value as any})}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="low">Faible</option>
-                <option value="medium">Moyenne</option>
-                <option value="high">Élevée</option>
-                <option value="urgent">Urgente</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Budget (optionnel)</label>
-              <input
-                type="text"
-                value={formData.budget}
-                onChange={(e) => setFormData({...formData, budget: e.target.value})}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Ex: 500000 FCFA"
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">Date limite (optionnel)</label>
-            <input
-              type="date"
-              value={formData.deadline}
-              onChange={(e) => setFormData({...formData, deadline: e.target.value})}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
-          <div className="flex space-x-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
-            >
-              Annuler
-            </button>
-            <button
-              type="submit"
-              className="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
-            >
-              Envoyer la demande
-            </button>
-          </div>
-        </form>
       </div>
     </div>
   )

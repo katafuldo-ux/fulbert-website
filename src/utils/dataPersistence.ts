@@ -1,4 +1,6 @@
-// Système de persistance des données pour le déploiement Netlify
+// Système de persistance des données avec API Netlify Functions
+
+import ApiService from './apiService'
 
 export interface ClientData {
   id: string
@@ -73,94 +75,151 @@ class DataPersistence {
   }
 
   // Clients
-  getClients(): ClientData[] {
+  async getClients(): Promise<ClientData[]> {
+    try {
+      const clients = await ApiService.getClients();
+      // Sauvegarder en cache pour accès hors ligne
+      localStorage.setItem(this.STORAGE_KEYS.CLIENTS, JSON.stringify(clients));
+      return clients;
+    } catch (error) {
+      console.error('Erreur lors de la récupération des clients:', error);
+      // Fallback sur localStorage en cas d'erreur
+      return this.getLocalClients();
+    }
+  }
+
+  private getLocalClients(): ClientData[] {
     try {
       const data = localStorage.getItem(this.STORAGE_KEYS.CLIENTS)
       return data ? JSON.parse(data) : []
     } catch (error) {
-      console.error('Erreur lors de la récupération des clients:', error)
+      console.error('Erreur lors de la récupération locale des clients:', error)
       return []
     }
   }
 
-  saveClients(clients: ClientData[]): void {
+  async saveClients(clients: ClientData[]): Promise<void> {
     try {
-      localStorage.setItem(this.STORAGE_KEYS.CLIENTS, JSON.stringify(clients))
-      // Sauvegarde de secours dans sessionStorage
-      sessionStorage.setItem(this.STORAGE_KEYS.CLIENTS, JSON.stringify(clients))
+      // Sauvegarder sur le serveur
+      for (const client of clients) {
+        await ApiService.saveClient(client);
+      }
+      // Sauvegarder en cache local
+      localStorage.setItem(this.STORAGE_KEYS.CLIENTS, JSON.stringify(clients));
+      sessionStorage.setItem(this.STORAGE_KEYS.CLIENTS, JSON.stringify(clients));
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde des clients:', error)
+      console.error('Erreur lors de la sauvegarde des clients:', error);
+      // Fallback sur localStorage
+      localStorage.setItem(this.STORAGE_KEYS.CLIENTS, JSON.stringify(clients));
+      sessionStorage.setItem(this.STORAGE_KEYS.CLIENTS, JSON.stringify(clients));
     }
   }
 
-  addClient(client: ClientData): void {
-    const clients = this.getClients()
-    clients.push(client)
-    this.saveClients(clients)
+  async addClient(client: ClientData): Promise<void> {
+    const clients = await this.getClients();
+    clients.push(client);
+    await this.saveClients(clients);
   }
 
-  getClientByEmail(email: string): ClientData | null {
-    const clients = this.getClients()
-    return clients.find(client => client.email === email) || null
+  async getClientByEmail(email: string): Promise<ClientData | null> {
+    const clients = await this.getClients();
+    return clients.find(client => client.email === email) || null;
   }
 
-  getClientById(id: string): ClientData | null {
-    const clients = this.getClients()
-    return clients.find(client => client.id === id) || null
+  async getClientById(id: string): Promise<ClientData | null> {
+    const clients = await this.getClients();
+    return clients.find(client => client.id === id) || null;
   }
 
-  updateClient(id: string, updates: Partial<ClientData>): void {
-    const clients = this.getClients()
-    const index = clients.findIndex(client => client.id === id)
+  async updateClient(id: string, updates: Partial<ClientData>): Promise<void> {
+    const clients = await this.getClients();
+    const index = clients.findIndex(client => client.id === id);
     if (index !== -1) {
-      clients[index] = { ...clients[index], ...updates }
-      this.saveClients(clients)
+      clients[index] = { ...clients[index], ...updates };
+      await this.saveClients(clients);
+      // Mettre à jour directement sur le serveur aussi
+      await ApiService.updateClient(id, updates);
     }
   }
 
   // Service Requests
-  getServiceRequests(): ServiceRequestData[] {
+  async getServiceRequests(): Promise<ServiceRequestData[]> {
+    try {
+      const requests = await ApiService.getServiceRequests();
+      // Sauvegarder en cache pour accès hors ligne
+      localStorage.setItem(this.STORAGE_KEYS.SERVICE_REQUESTS, JSON.stringify(requests));
+      return requests;
+    } catch (error) {
+      console.error('Erreur lors de la récupération des demandes:', error);
+      // Fallback sur localStorage
+      return this.getLocalServiceRequests();
+    }
+  }
+
+  private getLocalServiceRequests(): ServiceRequestData[] {
     try {
       const data = localStorage.getItem(this.STORAGE_KEYS.SERVICE_REQUESTS)
       return data ? JSON.parse(data) : []
     } catch (error) {
-      console.error('Erreur lors de la récupération des demandes:', error)
+      console.error('Erreur lors de la récupération locale des demandes:', error)
       return []
     }
   }
 
-  saveServiceRequests(requests: ServiceRequestData[]): void {
+  async saveServiceRequests(requests: ServiceRequestData[]): Promise<void> {
     try {
-      localStorage.setItem(this.STORAGE_KEYS.SERVICE_REQUESTS, JSON.stringify(requests))
-      // Sauvegarde de secours dans sessionStorage
-      sessionStorage.setItem(this.STORAGE_KEYS.SERVICE_REQUESTS, JSON.stringify(requests))
+      // Sauvegarder sur le serveur
+      for (const request of requests) {
+        await ApiService.saveServiceRequest(request);
+      }
+      // Sauvegarder en cache local
+      localStorage.setItem(this.STORAGE_KEYS.SERVICE_REQUESTS, JSON.stringify(requests));
+      sessionStorage.setItem(this.STORAGE_KEYS.SERVICE_REQUESTS, JSON.stringify(requests));
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde des demandes:', error)
+      console.error('Erreur lors de la sauvegarde des demandes:', error);
+      // Fallback sur localStorage
+      localStorage.setItem(this.STORAGE_KEYS.SERVICE_REQUESTS, JSON.stringify(requests));
+      sessionStorage.setItem(this.STORAGE_KEYS.SERVICE_REQUESTS, JSON.stringify(requests));
     }
   }
 
-  addServiceRequest(request: ServiceRequestData): void {
-    const requests = this.getServiceRequests()
-    requests.push(request)
-    this.saveServiceRequests(requests)
+  async addServiceRequest(request: ServiceRequestData): Promise<void> {
+    const requests = await this.getServiceRequests();
+    requests.push(request);
+    await this.saveServiceRequests(requests);
   }
 
-  updateServiceRequest(id: string, updates: Partial<ServiceRequestData>): void {
-    const requests = this.getServiceRequests()
-    const index = requests.findIndex(request => request.id === id)
+  async updateServiceRequest(id: string, updates: Partial<ServiceRequestData>): Promise<void> {
+    const requests = await this.getServiceRequests();
+    const index = requests.findIndex(request => request.id === id);
     if (index !== -1) {
-      requests[index] = { ...requests[index], ...updates }
-      this.saveServiceRequests(requests)
+      requests[index] = { ...requests[index], ...updates };
+      await this.saveServiceRequests(requests);
+      // Mettre à jour directement sur le serveur
+      await ApiService.updateServiceRequest(id, updates);
     }
   }
 
-  getServiceRequestsByClientId(clientId: string): ServiceRequestData[] {
-    const requests = this.getServiceRequests()
-    return requests.filter(request => request.clientId === clientId)
+  async getServiceRequestsByClientId(clientId: string): Promise<ServiceRequestData[]> {
+    const requests = await this.getServiceRequests();
+    return requests.filter(request => request.clientId === clientId);
   }
 
   // Website Stats
-  getWebsiteStats(): WebsiteStats {
+  async getWebsiteStats(): Promise<WebsiteStats> {
+    try {
+      const stats = await ApiService.getWebsiteStats();
+      // Sauvegarder en cache pour accès hors ligne
+      localStorage.setItem(this.STORAGE_KEYS.WEBSITE_STATS, JSON.stringify(stats));
+      return stats;
+    } catch (error) {
+      console.error('Erreur lors de la récupération des statistiques:', error);
+      // Fallback sur localStorage
+      return this.getLocalWebsiteStats();
+    }
+  }
+
+  private getLocalWebsiteStats(): WebsiteStats {
     try {
       const data = localStorage.getItem(this.STORAGE_KEYS.WEBSITE_STATS)
       if (data) {
@@ -177,7 +236,7 @@ class DataPersistence {
         lastUpdated: new Date().toISOString()
       }
     } catch (error) {
-      console.error('Erreur lors de la récupération des statistiques:', error)
+      console.error('Erreur lors de la récupération locale des statistiques:', error)
       return {
         visitors: [],
         totalVisits: 0,
@@ -187,55 +246,81 @@ class DataPersistence {
     }
   }
 
-  saveWebsiteStats(stats: WebsiteStats): void {
+  async saveWebsiteStats(stats: WebsiteStats): Promise<void> {
     try {
-      localStorage.setItem(this.STORAGE_KEYS.WEBSITE_STATS, JSON.stringify(stats))
-      // Sauvegarde de secours dans sessionStorage
-      sessionStorage.setItem(this.STORAGE_KEYS.WEBSITE_STATS, JSON.stringify(stats))
+      // Sauvegarder sur le serveur
+      await ApiService.updateWebsiteStats(stats);
+      // Sauvegarder en cache local
+      localStorage.setItem(this.STORAGE_KEYS.WEBSITE_STATS, JSON.stringify(stats));
+      sessionStorage.setItem(this.STORAGE_KEYS.WEBSITE_STATS, JSON.stringify(stats));
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde des statistiques:', error)
+      console.error('Erreur lors de la sauvegarde des statistiques:', error);
+      // Fallback sur localStorage
+      localStorage.setItem(this.STORAGE_KEYS.WEBSITE_STATS, JSON.stringify(stats));
+      sessionStorage.setItem(this.STORAGE_KEYS.WEBSITE_STATS, JSON.stringify(stats));
     }
   }
 
-  addVisitor(visitor: VisitorData): void {
-    const stats = this.getWebsiteStats()
-    stats.visitors.unshift(visitor)
-    stats.totalVisits++
-    stats.uniqueVisitorCount = new Set(stats.visitors.map(v => v.sessionId)).size
-    stats.lastUpdated = new Date().toISOString()
+  async addVisitor(visitor: VisitorData): Promise<void> {
+    const stats = await this.getWebsiteStats();
+    stats.visitors.unshift(visitor);
+    stats.totalVisits++;
+    stats.uniqueVisitorCount = new Set(stats.visitors.map(v => v.sessionId)).size;
+    stats.lastUpdated = new Date().toISOString();
     
     // Limiter à 1000 visiteurs pour éviter la surcharge
     if (stats.visitors.length > 1000) {
-      stats.visitors = stats.visitors.slice(0, 1000)
+      stats.visitors = stats.visitors.slice(0, 1000);
     }
     
-    this.saveWebsiteStats(stats)
+    await this.saveWebsiteStats(stats);
   }
 
   // Job Applications
-  getJobApplications(): any[] {
+  async getJobApplications(): Promise<any[]> {
+    try {
+      const applications = await ApiService.getJobApplications();
+      // Sauvegarder en cache pour accès hors ligne
+      localStorage.setItem(this.STORAGE_KEYS.JOB_APPLICATIONS, JSON.stringify(applications));
+      return applications;
+    } catch (error) {
+      console.error('Erreur lors de la récupération des candidatures:', error);
+      // Fallback sur localStorage
+      return this.getLocalJobApplications();
+    }
+  }
+
+  private getLocalJobApplications(): any[] {
     try {
       const data = localStorage.getItem(this.STORAGE_KEYS.JOB_APPLICATIONS)
       return data ? JSON.parse(data) : []
     } catch (error) {
-      console.error('Erreur lors de la récupération des candidatures:', error)
+      console.error('Erreur lors de la récupération locale des candidatures:', error)
       return []
     }
   }
 
-  saveJobApplications(applications: any[]): void {
+  async saveJobApplications(applications: any[]): Promise<void> {
     try {
-      localStorage.setItem(this.STORAGE_KEYS.JOB_APPLICATIONS, JSON.stringify(applications))
-      sessionStorage.setItem(this.STORAGE_KEYS.JOB_APPLICATIONS, JSON.stringify(applications))
+      // Sauvegarder sur le serveur
+      for (const application of applications) {
+        await ApiService.saveJobApplication(application);
+      }
+      // Sauvegarder en cache local
+      localStorage.setItem(this.STORAGE_KEYS.JOB_APPLICATIONS, JSON.stringify(applications));
+      sessionStorage.setItem(this.STORAGE_KEYS.JOB_APPLICATIONS, JSON.stringify(applications));
     } catch (error) {
-      console.error('Erreur lors de la sauvegarde des candidatures:', error)
+      console.error('Erreur lors de la sauvegarde des candidatures:', error);
+      // Fallback sur localStorage
+      localStorage.setItem(this.STORAGE_KEYS.JOB_APPLICATIONS, JSON.stringify(applications));
+      sessionStorage.setItem(this.STORAGE_KEYS.JOB_APPLICATIONS, JSON.stringify(applications));
     }
   }
 
-  addJobApplication(application: any): void {
-    const applications = this.getJobApplications()
-    applications.push(application)
-    this.saveJobApplications(applications)
+  async addJobApplication(application: any): Promise<void> {
+    const applications = await this.getJobApplications();
+    applications.push(application);
+    await this.saveJobApplications(applications);
   }
 
   // Current Client
@@ -287,52 +372,65 @@ class DataPersistence {
     }
   }
 
-  // Migration depuis les anciennes clés
-  migrateOldData(): void {
+  // Migration depuis les anciennes clés et localStorage vers l'API
+  async migrateOldData(): Promise<void> {
     try {
-      // Migration des clients
+      // D'abord migrer depuis les anciennes clés localStorage
       const oldClients = localStorage.getItem('clients')
+      const oldRequests = localStorage.getItem('serviceRequests')
+      const oldStats = localStorage.getItem('websiteStats')
+      const oldApplications = localStorage.getItem('jobApplications')
+      const oldAuth = localStorage.getItem('isAdminAuthenticated')
+
+      let hasOldData = false
+
+      // Migration des clients
       if (oldClients && !localStorage.getItem(this.STORAGE_KEYS.CLIENTS)) {
         localStorage.setItem(this.STORAGE_KEYS.CLIENTS, oldClients)
+        hasOldData = true
       }
 
       // Migration des demandes
-      const oldRequests = localStorage.getItem('serviceRequests')
       if (oldRequests && !localStorage.getItem(this.STORAGE_KEYS.SERVICE_REQUESTS)) {
         localStorage.setItem(this.STORAGE_KEYS.SERVICE_REQUESTS, oldRequests)
+        hasOldData = true
       }
 
       // Migration des stats
-      const oldStats = localStorage.getItem('websiteStats')
       if (oldStats && !localStorage.getItem(this.STORAGE_KEYS.WEBSITE_STATS)) {
         localStorage.setItem(this.STORAGE_KEYS.WEBSITE_STATS, oldStats)
+        hasOldData = true
       }
 
       // Migration des candidatures
-      const oldApplications = localStorage.getItem('jobApplications')
       if (oldApplications && !localStorage.getItem(this.STORAGE_KEYS.JOB_APPLICATIONS)) {
         localStorage.setItem(this.STORAGE_KEYS.JOB_APPLICATIONS, oldApplications)
+        hasOldData = true
       }
 
       // Migration de l'auth admin
-      const oldAuth = localStorage.getItem('isAdminAuthenticated')
       if (oldAuth && !localStorage.getItem(this.STORAGE_KEYS.ADMIN_AUTH)) {
         localStorage.setItem(this.STORAGE_KEYS.ADMIN_AUTH, oldAuth)
       }
 
-      console.log('Migration des données terminée')
+      // Si on a des données anciennes, les migrer vers l'API
+      if (hasOldData) {
+        console.log('Migration des données locales vers l\'API...')
+        await ApiService.migrateFromLocalStorage()
+        console.log('Migration terminée')
+      }
     } catch (error) {
       console.error('Erreur lors de la migration des données:', error)
     }
   }
 
   // Export des données pour backup
-  exportAllData(): string {
+  async exportAllData(): Promise<string> {
     const data = {
-      clients: this.getClients(),
-      serviceRequests: this.getServiceRequests(),
-      websiteStats: this.getWebsiteStats(),
-      jobApplications: this.getJobApplications(),
+      clients: await this.getClients(),
+      serviceRequests: await this.getServiceRequests(),
+      websiteStats: await this.getWebsiteStats(),
+      jobApplications: await this.getJobApplications(),
       exportDate: new Date().toISOString()
     }
     return JSON.stringify(data, null, 2)

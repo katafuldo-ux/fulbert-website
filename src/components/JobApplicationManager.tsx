@@ -1,5 +1,8 @@
 import { useState, useEffect } from 'react'
-import { User, Mail, Phone, FileText, Briefcase, CheckCircle, XCircle, Clock, Eye, Trash2, Download, MessageSquare, Send, Search, Filter, Calendar, Edit, Save, X, Users, TrendingUp, Globe, Monitor } from 'lucide-react'
+import { User, Mail, Phone, FileText, Briefcase, CheckCircle, XCircle, Clock, Eye, Trash2, Download, MessageSquare, Send, Search, Filter, Calendar, Edit, Save, X, Users, TrendingUp, Globe, Monitor, Database, Shield, Activity } from 'lucide-react'
+import { decryptData, encryptData } from '../utils/security'
+import BasePanel from './BasePanel'
+import SimpleApi from '../utils/simpleApi'
 
 interface JobApplication {
   id: string
@@ -27,24 +30,48 @@ interface JobApplication {
   interviewDate?: string
 }
 
+interface UserAccount {
+  id: string
+  email: string
+  fullName: string
+  phone?: string
+  company?: string
+  role: 'admin' | 'client' | 'visitor'
+  createdAt: string
+  lastLogin: string
+  isActive: boolean
+  loginCount: number
+  userAgent?: string
+  ip?: string
+}
+
 interface VisitorStats {
-  totalVisits: number
-  uniqueVisitorCount: number
-  visitors: Array<{
+  totalVisitors: number
+  activeUsers: number
+  todayVisitors: number
+  countries: number
+  recentVisitors: Array<{
     timestamp: string
+    sessionId: string
+    ip: string
     userAgent: string
-    language: string
+    browser: string
     platform: string
     screenResolution: string
-    referrer: string
-    sessionId: string
-    visitCount: number
+    country: string
   }>
-  lastUpdated: string
+  pageViews: Array<{
+    page: string
+    title: string
+    views: number
+    duration: string
+  }>
 }
 
 export default function JobApplicationManager() {
+  const [activePanel, setActivePanel] = useState<'applications' | 'accounts' | 'clients' | 'base'>('applications')
   const [applications, setApplications] = useState<JobApplication[]>([])
+  const [userAccounts, setUserAccounts] = useState<UserAccount[]>([])
   const [selectedApplication, setSelectedApplication] = useState<JobApplication | null>(null)
   const [filter, setFilter] = useState<'all' | 'pending' | 'approved' | 'rejected' | 'interview'>('all')
   const [searchTerm, setSearchTerm] = useState('')
@@ -56,91 +83,144 @@ export default function JobApplicationManager() {
   const [positionFilter, setPositionFilter] = useState('')
   const [dateFilter, setDateFilter] = useState('')
   const [visitorStats, setVisitorStats] = useState<VisitorStats | null>(null)
-  const [activeTab, setActiveTab] = useState<'applications' | 'visitors'>('applications')
 
   useEffect(() => {
-    const storedApplications = JSON.parse(localStorage.getItem('jobApplications') || '[]')
-    const storedStats = JSON.parse(localStorage.getItem('websiteStats') || '{}')
+    loadData()
     
-    if (storedStats.totalVisits) {
-      setVisitorStats(storedStats)
+    // Écouter les changements en temps réel
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'jobApplications') {
+        loadApplications()
+      }
+      if (e.key === 'userAccounts') {
+        loadUserAccounts()
+      }
+      if (e.key === 'websiteStats') {
+        loadVisitorStats()
+      }
     }
     
-    if (storedApplications.length === 0) {
-      const demoApplications = [
-        {
-          id: 'demo-1',
-          fullName: 'Jean Koffi',
-          idNumber: 'TG123456789',
-          email: 'jean.koffi@email.com',
-          phone: '+228 90 12 34 56',
-          position: 'Électricien Bâtiment',
-          experience: '5-10',
-          education: 'BAC+3',
-          skills: 'Électricité industrielle, sécurité, maintenance préventive, automatisation',
-          motivation: 'Passionné par le domaine électrique avec 5 ans d\'expérience pratique',
-          availability: 'Immédiate',
-          salary: '250000 - 300000',
-          address: 'Rue du Commerce, Lomé',
-          city: 'Lomé',
-          country: 'Togo',
-          status: 'pending' as const,
-          submittedAt: '2024-01-15 10:30'
-        },
-        {
-          id: 'demo-2',
-          fullName: 'Marie Aho',
-          idNumber: 'TG987654321',
-          email: 'marie.aho@email.com',
-          phone: '+228 91 23 45 67',
-          position: 'Technicien Cybersécurité',
-          experience: '3-5',
-          education: 'BAC+5',
-          skills: 'Cybersécurité, administration réseau, audit de sécurité, cryptographie',
-          motivation: 'Spécialiste en cybersécurité avec des certifications reconnues',
-          availability: '1 mois',
-          salary: '300000 - 350000',
-          address: 'Avenue de la Paix, Lomé',
-          city: 'Lomé',
-          country: 'Togo',
-          status: 'approved' as const,
-          submittedAt: '2024-01-14 14:20',
-          reviewedAt: '2024-01-15 09:15',
-          notes: 'Excellent profil, expérience pertinente en cybersécurité',
-          responseMessage: 'Bonjour Marie, nous sommes ravis de vous informer que votre candidature a été retenue.',
-          responseSent: true,
-          responseSentAt: '2024-01-15 10:00',
-          interviewDate: '2024-01-20 14:00'
-        }
-      ]
-      setApplications(demoApplications)
-    } else {
-      setApplications(storedApplications)
+    window.addEventListener('storage', handleStorageChange)
+    
+    // Vérifier périodiquement les nouvelles données
+    const interval = setInterval(() => {
+      loadData()
+    }, 5000) // Toutes les 5 secondes
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange)
+      clearInterval(interval)
     }
   }, [])
 
-  const handleStatusChange = (id: string, newStatus: 'approved' | 'rejected' | 'interview', notes?: string) => {
+  const loadData = () => {
+    loadApplications()
+    loadUserAccounts()
+    loadVisitorStats()
+  }
+
+  const loadApplications = async () => {
+    try {
+      // Utiliser l'API simplifiée
+      const applications = await SimpleApi.getJobApplications();
+      
+      // Filtrer les données de démo
+      const filteredApplications = applications.filter((app: any) => 
+        !app.id.includes('demo') && 
+        !app.email.includes('demo') && 
+        !app.fullName.includes('Demo')
+      );
+      
+      setApplications(filteredApplications);
+      
+    } catch (error) {
+      console.error('Erreur lors du chargement des candidatures:', error);
+      setApplications([]);
+    }
+  }
+
+  const loadUserAccounts = async () => {
+    try {
+      // Utiliser l'API simplifiée
+      const accounts = await SimpleApi.getClients();
+      const filteredAccounts = accounts.filter((account: any) => 
+        !account.id.includes('demo') && 
+        !account.email.includes('demo') && 
+        !account.fullName.includes('Demo')
+      );
+      setUserAccounts(filteredAccounts);
+    } catch (error) {
+      console.error('Erreur lors du chargement des comptes:', error);
+      setUserAccounts([]);
+    }
+  }
+
+  const loadVisitorStats = async () => {
+    try {
+      // Utiliser l'API simplifiée
+      const stats = await SimpleApi.getClients();
+      setVisitorStats(stats as any);
+    } catch (error) {
+      console.error('Erreur lors du chargement des statistiques:', error);
+      // Données de démo si aucune donnée réelle
+      setVisitorStats({
+        totalVisitors: 1247,
+        activeUsers: 89,
+        todayVisitors: 156,
+        countries: 12,
+        recentVisitors: [
+          {
+            timestamp: new Date().toISOString(),
+            sessionId: 'sess_' + Math.random().toString(36).substr(2, 9),
+            ip: '192.168.1.1',
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            browser: 'Chrome',
+            platform: 'Windows',
+            screenResolution: '1920x1080',
+            country: 'Togo'
+          }
+        ],
+        pageViews: [
+          {
+            page: '/',
+            title: 'Accueil',
+            views: 45,
+            duration: '2:30'
+          }
+        ]
+      });
+    }
+  }
+
+  const handleStatusChange = async (id: string, newStatus: string) => {
     const updatedApplications = applications.map(app => 
       app.id === id 
-        ? { 
-            ...app, 
-            status: newStatus, 
-            reviewedAt: new Date().toLocaleString('fr-TG'),
-            notes: notes || app.notes
-          } 
+        ? { ...app, status: newStatus as any, reviewedAt: new Date().toISOString() }
         : app
     )
     setApplications(updatedApplications)
-    localStorage.setItem('jobApplications', JSON.stringify(updatedApplications))
+    
+    // Sauvegarder via l'API simplifiée
+    try {
+      await SimpleApi.updateJobApplication(id, { 
+        status: newStatus, 
+        reviewedAt: new Date().toISOString() 
+      });
+    } catch (error) {
+      console.error('Erreur lors de la mise à jour:', error);
+    }
   }
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Êtes-vous sûr de vouloir supprimer cette candidature ?')) {
       const updatedApplications = applications.filter(app => app.id !== id)
       setApplications(updatedApplications)
-      localStorage.setItem('jobApplications', JSON.stringify(updatedApplications))
-      if (selectedApplication?.id === id) {
-        setSelectedApplication(null)
+      
+      // Supprimer via l'API simplifiée
+      try {
+        await SimpleApi.deleteJobApplication(id);
+      } catch (error) {
+        console.error('Erreur lors de la suppression:', error);
       }
     }
   }
@@ -160,6 +240,7 @@ export default function JobApplicationManager() {
     )
     setApplications(updatedApplications)
     localStorage.setItem('jobApplications', JSON.stringify(updatedApplications))
+    localStorage.setItem('jobApplications_debug', JSON.stringify(updatedApplications))
     setShowResponseForm(false)
     setResponseMessage('')
     alert('Réponse envoyée avec succès !')
@@ -175,6 +256,7 @@ export default function JobApplicationManager() {
     )
     setApplications(updatedApplications)
     localStorage.setItem('jobApplications', JSON.stringify(updatedApplications))
+    localStorage.setItem('jobApplications_debug', JSON.stringify(updatedApplications))
     setSelectedApplication({ ...selectedApplication, notes: tempNotes })
     setEditingNotes(false)
   }
@@ -198,9 +280,11 @@ export default function JobApplicationManager() {
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
-    link.href = URL.createObjectURL(blob)
+    const href = URL.createObjectURL(blob)
+    link.href = href
     link.download = `candidatures_${new Date().toISOString().split('T')[0]}.csv`
     link.click()
+    URL.revokeObjectURL(href)
   }
 
   const filteredApplications = applications.filter(app => {
@@ -235,519 +319,251 @@ export default function JobApplicationManager() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-          <div className="flex justify-between items-center mb-6">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">Panneau d'Administration FULBERT-ASKY</h1>
-              <p className="text-gray-600">Gérez les candidatures et consultez les statistiques du site</p>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={exportToCSV}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
-              >
-                <Download className="w-4 h-4" />
-                Exporter CSV
-              </button>
-            </div>
-          </div>
-
-          {/* Onglets */}
-          <div className="flex border-b border-gray-200">
-            <button
-              onClick={() => setActiveTab('applications')}
-              className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${
-                activeTab === 'applications'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Briefcase className="w-4 h-4 inline mr-2" />
-              Candidatures ({applications.length})
-            </button>
-            <button
-              onClick={() => setActiveTab('visitors')}
-              className={`px-6 py-3 font-medium text-sm border-b-2 transition-colors ${
-                activeTab === 'visitors'
-                  ? 'border-blue-500 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              <Eye className="w-4 h-4 inline mr-2" />
-              Statistiques Visiteurs
-            </button>
-          </div>
-        </div>
-
-        {activeTab === 'applications' ? (
-          <>
-            {/* Filtres */}
+    <div className="min-h-screen bg-gray-50">
+      {activePanel === 'base' ? (
+        <BasePanel />
+      ) : (
+        <div className="p-6">
+          <div className="max-w-7xl mx-auto">
+            {/* Header */}
             <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h1 className="text-3xl font-bold text-gray-900 mb-2">Panneau d'Administration FULBERT-ASKY</h1>
+                  <p className="text-gray-600">Gérez les candidatures et consultez les statistiques du site</p>
+                </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={exportToCSV}
+                    className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Exporter CSV
+                  </button>
+                </div>
+              </div>
+
+              {/* Navigation Tabs */}
+              <div className="flex space-x-1 mb-6">
+                <button
+                  onClick={() => setActivePanel('applications')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activePanel === 'applications'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                  }`}
+                >
+                  <FileText className="w-4 h-4" />
+                  Candidatures
+                </button>
+                <button
+                  onClick={() => setActivePanel('accounts')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activePanel === 'accounts'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  Comptes
+                </button>
+                <button
+                  onClick={() => setActivePanel('clients')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activePanel === 'clients'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                  }`}
+                >
+                  <Briefcase className="w-4 h-4" />
+                  Clients
+                </button>
+                <button
+                  onClick={() => setActivePanel('base')}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    activePanel === 'base'
+                      ? 'bg-purple-100 text-purple-700'
+                      : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
+                  }`}
+                >
+                  <Database className="w-4 h-4" />
+                  BASE
+                </button>
+              </div>
+
+              {/* Filters */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                   <input
                     type="text"
                     placeholder="Rechercher..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
-                
                 <select
                   value={filter}
                   onChange={(e) => setFilter(e.target.value as any)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="all">Tous les statuts</option>
                   <option value="pending">En attente</option>
-                  <option value="approved">Approuvés</option>
-                  <option value="rejected">Rejetés</option>
+                  <option value="approved">Approuvées</option>
+                  <option value="rejected">Rejetées</option>
                   <option value="interview">Entretien</option>
                 </select>
-
-                <select
-                  value={positionFilter}
-                  onChange={(e) => setPositionFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                >
-                  <option value="">Toutes les positions</option>
-                  <option value="Électricien Bâtiment">Électricien Bâtiment</option>
-                  <option value="Électricien Industriel">Électricien Industriel</option>
-                  <option value="Technicien Cybersécurité">Technicien Cybersécurité</option>
-                  <option value="Ingénieur Électrique">Ingénieur Électrique</option>
-                  <option value="Ingénieur Cybersécurité">Ingénieur Cybersécurité</option>
-                </select>
-
-                <input
-                  type="date"
-                  value={dateFilter}
-                  onChange={(e) => setDateFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
               </div>
             </div>
 
-            {/* Liste des candidatures */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              <div className="lg:col-span-2">
+            {activePanel === 'applications' && (
+              <>
+                {/* Applications list */}
                 <div className="bg-white rounded-xl shadow-lg overflow-hidden">
-                  <div className="p-6 border-b border-gray-200">
-                    <h2 className="text-xl font-bold text-gray-900">Candidatures ({filteredApplications.length})</h2>
-                  </div>
-                  <div className="divide-y divide-gray-200 max-h-96 overflow-y-auto">
-                    {filteredApplications.map(application => (
-                      <div
-                        key={application.id}
-                        className={`p-6 hover:bg-gray-50 cursor-pointer transition-colors ${
-                          selectedApplication?.id === application.id ? 'bg-blue-50' : ''
-                        }`}
-                        onClick={() => setSelectedApplication(application)}
-                      >
-                        <div className="flex justify-between items-start mb-4">
-                          <div>
-                            <h3 className="text-lg font-semibold text-gray-900">{application.fullName}</h3>
-                            <p className="text-sm text-gray-600">{application.position}</p>
-                          </div>
-                          <span className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1 ${getStatusColor(application.status)}`}>
-                            {getStatusIcon(application.status)}
-                            {application.status === 'pending' && 'En attente'}
-                            {application.status === 'approved' && 'Approuvé'}
-                            {application.status === 'rejected' && 'Rejeté'}
-                            {application.status === 'interview' && 'Entretien'}
-                          </span>
-                        </div>
-                        
-                        <div className="grid grid-cols-2 gap-4 text-sm text-gray-600 mb-4">
-                          <div className="flex items-center gap-2">
-                            <Mail className="w-4 h-4" />
-                            {application.email}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Phone className="w-4 h-4" />
-                            {application.phone}
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Briefcase className="w-4 h-4" />
-                            {application.experience} ans
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Calendar className="w-4 h-4" />
-                            {application.submittedAt}
-                          </div>
-                        </div>
-
-                        <div className="flex gap-2">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleStatusChange(application.id, 'approved')
-                            }}
-                            className="px-3 py-1 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
-                          >
-                            Approuver
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleStatusChange(application.id, 'interview')
-                            }}
-                            className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                          >
-                            Entretien
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleStatusChange(application.id, 'rejected')
-                            }}
-                            className="px-3 py-1 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
-                          >
-                            Rejeter
-                          </button>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              handleDelete(application.id)
-                            }}
-                            className="px-3 py-1 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead className="bg-gray-50 border-b border-gray-200">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Candidat</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Statut</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {filteredApplications.map((application) => (
+                          <tr key={application.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <div>
+                                <div className="text-sm font-medium text-gray-900">{application.fullName}</div>
+                                <div className="text-sm text-gray-500">{application.email}</div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{application.position}</td>
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(application.status)}`}>
+                                {getStatusIcon(application.status)}
+                                <span className="ml-1">{application.status}</span>
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{application.submittedAt}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                              <button
+                                onClick={() => setSelectedApplication(application)}
+                                className="text-blue-600 hover:text-blue-900 mr-3"
+                              >
+                                <Eye className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleDelete(application.id)}
+                                className="text-red-600 hover:text-red-900"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
-              </div>
+              </>
+            )}
 
-              {/* Détails de la candidature */}
-              <div className="lg:col-span-1">
-                {selectedApplication ? (
-                  <div className="bg-white rounded-xl shadow-lg p-6">
-                    <div className="flex justify-between items-start mb-6">
-                      <h2 className="text-xl font-bold text-gray-900">Détails</h2>
+            {activePanel === 'accounts' && (
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Gestion des comptes</h2>
+                <p className="text-gray-600">Cette section est en développement.</p>
+              </div>
+            )}
+
+            {activePanel === 'clients' && (
+              <div className="bg-white rounded-xl shadow-lg p-6">
+                <h2 className="text-xl font-semibold mb-4">Gestion des clients</h2>
+                <p className="text-gray-600">Cette section est en développement.</p>
+              </div>
+            )}
+
+            {/* Application Details Modal */}
+            {selectedApplication && (
+              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+                  <div className="p-6 border-b border-gray-200">
+                    <div className="flex justify-between items-center">
+                      <h2 className="text-2xl font-bold text-gray-900">Détails de la candidature</h2>
                       <button
                         onClick={() => setSelectedApplication(null)}
                         className="text-gray-400 hover:text-gray-600"
                       >
-                        <X className="w-5 h-5" />
+                        <X className="w-6 h-6" />
                       </button>
                     </div>
-
-                    <div className="space-y-4">
+                  </div>
+                  
+                  <div className="p-6">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       <div>
-                        <h3 className="font-semibold text-gray-900 mb-2">Informations personnelles</h3>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Nom:</span>
-                            <span className="font-medium">{selectedApplication.fullName}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">CNI:</span>
-                            <span className="font-medium">{selectedApplication.idNumber}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Email:</span>
-                            <span className="font-medium">{selectedApplication.email}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Téléphone:</span>
-                            <span className="font-medium">{selectedApplication.phone}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Adresse:</span>
-                            <span className="font-medium">{selectedApplication.address}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Ville:</span>
-                            <span className="font-medium">{selectedApplication.city}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Pays:</span>
-                            <span className="font-medium">{selectedApplication.country}</span>
-                          </div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Informations personnelles</h3>
+                        <div className="space-y-3">
+                          <div><strong>Nom:</strong> {selectedApplication.fullName}</div>
+                          <div><strong>Email:</strong> {selectedApplication.email}</div>
+                          <div><strong>Téléphone:</strong> {selectedApplication.phone}</div>
+                          <div><strong>CNI:</strong> {selectedApplication.idNumber}</div>
+                          <div><strong>Adresse:</strong> {selectedApplication.address}, {selectedApplication.city}</div>
                         </div>
                       </div>
-
+                      
                       <div>
-                        <h3 className="font-semibold text-gray-900 mb-2">Professionnel</h3>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Position:</span>
-                            <span className="font-medium">{selectedApplication.position}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Expérience:</span>
-                            <span className="font-medium">{selectedApplication.experience} ans</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Éducation:</span>
-                            <span className="font-medium">{selectedApplication.education}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Salaire:</span>
-                            <span className="font-medium">{selectedApplication.salary} FCFA</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Disponibilité:</span>
-                            <span className="font-medium">{selectedApplication.availability}</span>
-                          </div>
+                        <h3 className="text-lg font-semibold text-gray-900 mb-4">Professionnel</h3>
+                        <div className="space-y-3">
+                          <div><strong>Position:</strong> {selectedApplication.position}</div>
+                          <div><strong>Expérience:</strong> {selectedApplication.experience}</div>
+                          <div><strong>Éducation:</strong> {selectedApplication.education}</div>
+                          <div><strong>Compétences:</strong> {selectedApplication.skills}</div>
+                          <div><strong>Salaire:</strong> {selectedApplication.salary}</div>
                         </div>
                       </div>
+                    </div>
+                    
+                    <div className="mt-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Motivation</h3>
+                      <p className="text-gray-700">{selectedApplication.motivation}</p>
+                    </div>
+                    
+                    <div className="mt-6">
+                      <h3 className="text-lg font-semibold text-gray-900 mb-4">Disponibilité</h3>
+                      <p className="text-gray-700">{selectedApplication.availability}</p>
+                    </div>
 
-                      <div>
-                        <h3 className="font-semibold text-gray-900 mb-2">Compétences</h3>
-                        <p className="text-sm text-gray-600">{selectedApplication.skills}</p>
-                      </div>
-
-                      <div>
-                        <h3 className="font-semibold text-gray-900 mb-2">Motivation</h3>
-                        <p className="text-sm text-gray-600">{selectedApplication.motivation}</p>
-                      </div>
-
-                      <div>
-                        <div className="flex justify-between items-center mb-2">
-                          <h3 className="font-semibold text-gray-900">Notes</h3>
-                          <button
-                            onClick={() => {
-                              setEditingNotes(true)
-                              setTempNotes(selectedApplication.notes || '')
-                            }}
-                            className="text-blue-600 hover:text-blue-700"
-                          >
-                            <Edit className="w-4 h-4" />
-                          </button>
-                        </div>
-                        {editingNotes ? (
-                          <div className="space-y-2">
-                            <textarea
-                              value={tempNotes}
-                              onChange={(e) => setTempNotes(e.target.value)}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                              rows={3}
-                            />
-                            <div className="flex gap-2">
-                              <button
-                                onClick={handleSaveNotes}
-                                className="px-3 py-1 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm"
-                              >
-                                <Save className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => setEditingNotes(false)}
-                                className="px-3 py-1 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors text-sm"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-600">
-                            {selectedApplication.notes || 'Aucune note'}
-                          </p>
-                        )}
-                      </div>
-
-                      <div>
-                        <button
-                          onClick={() => setShowResponseForm(true)}
-                          className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
-                        >
-                          <Send className="w-4 h-4" />
-                          Envoyer une réponse
-                        </button>
-                      </div>
+                    <div className="mt-6 flex gap-3">
+                      <button
+                        onClick={() => handleStatusChange(selectedApplication.id, 'approved')}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+                      >
+                        Approuver
+                      </button>
+                      <button
+                        onClick={() => handleStatusChange(selectedApplication.id, 'rejected')}
+                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                      >
+                        Rejeter
+                      </button>
+                      <button
+                        onClick={() => handleStatusChange(selectedApplication.id, 'interview')}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                      >
+                        Entretien
+                      </button>
                     </div>
                   </div>
-                ) : (
-                  <div className="bg-white rounded-xl shadow-lg p-6 text-center text-gray-500">
-                    <Briefcase className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <p>Sélectionnez une candidature pour voir les détails</p>
-                  </div>
-                )}
+                </div>
               </div>
-            </div>
-          </>
-        ) : (
-          /* Statistiques des visiteurs */
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2">
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h2 className="text-xl font-bold text-gray-900 mb-6">Statistiques des Visiteurs</h2>
-                
-                {visitorStats ? (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
-                    <div className="bg-blue-50 p-4 rounded-lg text-center">
-                      <Users className="w-8 h-8 text-blue-600 mx-auto mb-2" />
-                      <p className="text-2xl font-bold text-blue-600">{visitorStats.totalVisits}</p>
-                      <p className="text-sm text-gray-600">Visites totales</p>
-                    </div>
-                    <div className="bg-green-50 p-4 rounded-lg text-center">
-                      <Eye className="w-8 h-8 text-green-600 mx-auto mb-2" />
-                      <p className="text-2xl font-bold text-green-600">{visitorStats.uniqueVisitorCount}</p>
-                      <p className="text-sm text-gray-600">Visiteurs uniques</p>
-                    </div>
-                    <div className="bg-purple-50 p-4 rounded-lg text-center">
-                      <TrendingUp className="w-8 h-8 text-purple-600 mx-auto mb-2" />
-                      <p className="text-2xl font-bold text-purple-600">
-                        {visitorStats.totalVisits > 0 ? Math.round((visitorStats.uniqueVisitorCount / visitorStats.totalVisits) * 100) : 0}%
-                      </p>
-                      <p className="text-sm text-gray-600">Taux de retour</p>
-                    </div>
-                    <div className="bg-orange-50 p-4 rounded-lg text-center">
-                      <Monitor className="w-8 h-8 text-orange-600 mx-auto mb-2" />
-                      <p className="text-2xl font-bold text-orange-600">
-                        {visitorStats.visitors.length > 0 ? new Set(visitorStats.visitors.map(v => v.screenResolution)).size : 0}
-                      </p>
-                      <p className="text-sm text-gray-600">Résolutions d'écran</p>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 text-gray-500">
-                    <Eye className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                    <p>Aucune donnée de visiteur disponible</p>
-                  </div>
-                )}
-
-                {visitorStats && visitorStats.visitors.length > 0 && (
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Visiteurs récents</h3>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="border-b border-gray-200">
-                            <th className="text-left py-2 px-4">Date</th>
-                            <th className="text-left py-2 px-4">Session</th>
-                            <th className="text-left py-2 px-4">Navigateur</th>
-                            <th className="text-left py-2 px-4">Plateforme</th>
-                            <th className="text-left py-2 px-4">Écran</th>
-                            <th className="text-left py-2 px-4">Visites</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {visitorStats.visitors.slice(0, 10).map((visitor, index) => (
-                            <tr key={index} className="border-b border-gray-100 hover:bg-gray-50">
-                              <td className="py-2 px-4">
-                                {new Date(visitor.timestamp).toLocaleString('fr-TG')}
-                              </td>
-                              <td className="py-2 px-4">
-                                <span className="text-xs bg-gray-100 px-2 py-1 rounded">
-                                  {visitor.sessionId.substring(0, 8)}...
-                                </span>
-                              </td>
-                              <td className="py-2 px-4">
-                                {visitor.userAgent.includes('Chrome') ? 'Chrome' :
-                                 visitor.userAgent.includes('Firefox') ? 'Firefox' :
-                                 visitor.userAgent.includes('Safari') ? 'Safari' : 'Autre'}
-                              </td>
-                              <td className="py-2 px-4">{visitor.platform}</td>
-                              <td className="py-2 px-4">{visitor.screenResolution}</td>
-                              <td className="py-2 px-4">{visitor.visitCount}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="lg:col-span-1">
-              <div className="bg-white rounded-xl shadow-lg p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Répartition par plateforme</h3>
-                {visitorStats && visitorStats.visitors.length > 0 ? (
-                  <div className="space-y-3">
-                    {Object.entries(
-                      visitorStats.visitors.reduce((acc, visitor) => {
-                        const platform = visitor.platform || 'Unknown'
-                        acc[platform] = (acc[platform] || 0) + 1
-                        return acc
-                      }, {} as Record<string, number>)
-                    ).map(([platform, count]) => (
-                      <div key={platform} className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">{platform}</span>
-                        <div className="flex items-center gap-2">
-                          <div className="w-24 bg-gray-200 rounded-full h-2">
-                            <div
-                              className="bg-blue-600 h-2 rounded-full"
-                              style={{ width: `${(count / visitorStats.visitors.length) * 100}%` }}
-                            />
-                          </div>
-                          <span className="text-sm font-medium">{count}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">Aucune donnée disponible</p>
-                )}
-              </div>
-
-              <div className="bg-white rounded-xl shadow-lg p-6 mt-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Langues</h3>
-                {visitorStats && visitorStats.visitors.length > 0 ? (
-                  <div className="space-y-3">
-                    {Object.entries(
-                      visitorStats.visitors.reduce((acc, visitor) => {
-                        const lang = visitor.language || 'Unknown'
-                        acc[lang] = (acc[lang] || 0) + 1
-                        return acc
-                      }, {} as Record<string, number>)
-                    ).map(([lang, count]) => (
-                      <div key={lang} className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">{lang}</span>
-                        <span className="text-sm font-medium">{count}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-gray-500">Aucune donnée disponible</p>
-                )}
-              </div>
-            </div>
+            )}
           </div>
-        )}
-
-        {/* Formulaire de réponse */}
-        {showResponseForm && selectedApplication && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded-xl p-6 max-w-2xl w-full mx-4">
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Réponse à {selectedApplication.fullName}</h3>
-              <textarea
-                value={responseMessage}
-                onChange={(e) => setResponseMessage(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                rows={6}
-                placeholder="Rédigez votre réponse..."
-              />
-              <div className="flex justify-end gap-3 mt-4">
-                <button
-                  onClick={() => {
-                    setShowResponseForm(false)
-                    setResponseMessage('')
-                  }}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-                >
-                  Annuler
-                </button>
-                <button
-                  onClick={handleSendResponse}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-                >
-                  <Send className="w-4 h-4" />
-                  Envoyer
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }

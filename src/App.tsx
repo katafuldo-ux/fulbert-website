@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react'
 import { Phone, Mail, Zap, Shield, Wrench, Building, Factory, Lock, Globe, CheckCircle, Power, Settings, Cpu, Database, User, Send, Clock, FileText, Briefcase, Users, Award, AlertTriangle, Wifi, Server, Cloud } from 'lucide-react'
 import Logo from './components/Logo'
+import MigrationHelper from './components/MigrationHelper'
+import DebugPanel from './components/DebugPanel'
+import { sanitizeInput, validateEmail, validatePhone, validateIdNumber, encryptData, decryptData } from './utils/security'
+import AccountManager from './utils/accountManager'
+import ApiService from './utils/apiService'
 
 function App() {
   const [formData, setFormData] = useState({
@@ -21,7 +26,7 @@ function App() {
   })
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
-  // Système de suivi des visiteurs
+  // Système de suivi des visiteurs et création de comptes
   useEffect(() => {
     const trackVisitor = () => {
       try {
@@ -40,6 +45,24 @@ function App() {
         // Sauvegarder la session
         sessionStorage.setItem('sessionId', visitorData.sessionId)
         localStorage.setItem('visitCount', visitorData.visitCount.toString())
+
+        // Créer ou mettre à jour le compte visiteur
+        const existingAccounts = AccountManager.getAllAccounts()
+        const visitorAccount = existingAccounts.find((acc: any) => 
+          acc.userAgent === navigator.userAgent && 
+          acc.type === 'visitor'
+        )
+
+        if (!visitorAccount) {
+          // Créer un nouveau compte visiteur
+          AccountManager.createVisitorAccount(
+            `visiteur_${visitorData.sessionId}@example.com`,
+            `Visiteur ${visitorData.sessionId.slice(-8)}`
+          )
+        } else {
+          // Mettre à jour la connexion
+          AccountManager.updateLogin(visitorAccount.id)
+        }
 
         // Obtenir les statistiques existantes
         const statsStr = localStorage.getItem('websiteStats')
@@ -93,14 +116,33 @@ function App() {
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+    // Nettoyer et valider les entrées
+    const cleanValue = sanitizeInput(value)
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value
+      [name]: cleanValue
     })
   }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    
+    // Validation des données avant soumission
+    if (!validateEmail(formData.email)) {
+      alert('Email invalide')
+      return
+    }
+    
+    if (!validatePhone(formData.phone)) {
+      alert('Numéro de téléphone invalide')
+      return
+    }
+    
+    if (!validateIdNumber(formData.idNumber)) {
+      alert('Numéro CNI invalide')
+      return
+    }
     
     const application = {
       id: Date.now().toString(),
@@ -109,8 +151,41 @@ function App() {
       submittedAt: new Date().toLocaleString('fr-TG')
     }
     
-    const existingApplications = JSON.parse(localStorage.getItem('jobApplications') || '[]')
-    localStorage.setItem('jobApplications', JSON.stringify([...existingApplications, application]))
+    // Chiffrer les données sensibles avant stockage
+    try {
+      const existingData = localStorage.getItem('jobApplications')
+      let existingApplications = []
+      
+      // Essayer de déchiffrer les données existantes
+      if (existingData) {
+        try {
+          const decryptedData = decryptData(existingData)
+          existingApplications = JSON.parse(decryptedData)
+        } catch (decryptError) {
+          // Si le déchiffrement échoue, essayer de lire directement (compatibilité)
+          try {
+            existingApplications = JSON.parse(existingData)
+          } catch (parseError) {
+            existingApplications = []
+          }
+        }
+      }
+      
+      const updatedApplications = [...existingApplications, application]
+      const encryptedData = encryptData(JSON.stringify(updatedApplications))
+      localStorage.setItem('jobApplications', encryptedData)
+      
+      // Aussi sauvegarder une copie non chiffrée pour le debug
+      localStorage.setItem('jobApplications_debug', JSON.stringify(updatedApplications))
+      
+    } catch (error) {
+      console.error('Erreur lors du stockage des données:', error)
+      // En cas d'erreur, sauvegarder sans chiffrement
+      const existingData = localStorage.getItem('jobApplications') || '[]'
+      const existingApplications = JSON.parse(existingData)
+      const updatedApplications = [...existingApplications, application]
+      localStorage.setItem('jobApplications', JSON.stringify(updatedApplications))
+    }
     
     setSubmitStatus('success')
     setFormData({
@@ -135,6 +210,8 @@ function App() {
 
   return (
     <div className="min-h-screen bg-white">
+      <MigrationHelper />
+      <DebugPanel />
       {/* Navigation */}
       <nav className="fixed top-0 w-full bg-white/90 backdrop-blur-md z-50 border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

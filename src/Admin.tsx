@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import JobApplicationManager from './components/JobApplicationManager'
-import ClientManager from './components/ClientManager'
+import FallbackAdmin from './components/FallbackAdmin'
 import Login from './components/Login'
 
 function Admin() {
@@ -8,11 +8,40 @@ function Admin() {
   const [activeTab, setActiveTab] = useState<'applications' | 'clients'>('applications')
 
   useEffect(() => {
-    // Vérifier si l'utilisateur est déjà authentifié
-    const auth = localStorage.getItem('isAdminAuthenticated')
-    if (auth === 'true') {
-      setIsAuthenticated(true)
+    // Vérifier si l'utilisateur est déjà authentifié avec validation de session
+    const checkAuth = () => {
+      const auth = localStorage.getItem('isAdminAuthenticated')
+      const sessionData = localStorage.getItem('adminSession')
+      
+      if (auth === 'true' && sessionData) {
+        try {
+          const session = JSON.parse(sessionData)
+          const now = Date.now()
+          
+          // Vérifier si la session est encore valide
+          if (session.expiresAt && now < session.expiresAt) {
+            setIsAuthenticated(true)
+          } else {
+            // Session expirée, nettoyer
+            localStorage.removeItem('isAdminAuthenticated')
+            localStorage.removeItem('adminSession')
+            setIsAuthenticated(false)
+          }
+        } catch {
+          // Session corrompue, nettoyer
+          localStorage.removeItem('isAdminAuthenticated')
+          localStorage.removeItem('adminSession')
+          setIsAuthenticated(false)
+        }
+      }
     }
+    
+    checkAuth()
+    
+    // Vérifier périodiquement la session
+    const interval = setInterval(checkAuth, 60000) // Toutes les minutes
+    
+    return () => clearInterval(interval)
   }, [])
 
   const handleLogin = (success: boolean) => {
@@ -21,6 +50,7 @@ function Admin() {
 
   const handleLogout = () => {
     localStorage.removeItem('isAdminAuthenticated')
+    localStorage.removeItem('adminSession')
     setIsAuthenticated(false)
   }
 
@@ -37,7 +67,7 @@ function Admin() {
             <nav className="flex space-x-4">
               <button
                 onClick={() => setActiveTab('applications')}
-                className={`px-4 py-2 rounded-lg font-medium ${
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                   activeTab === 'applications'
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -47,7 +77,7 @@ function Admin() {
               </button>
               <button
                 onClick={() => setActiveTab('clients')}
-                className={`px-4 py-2 rounded-lg font-medium ${
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                   activeTab === 'clients'
                     ? 'bg-green-600 text-white'
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
@@ -59,13 +89,13 @@ function Admin() {
           </div>
           <button
             onClick={handleLogout}
-            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors"
+            className="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-colors font-medium"
           >
             Déconnexion
           </button>
         </div>
       </div>
-      {activeTab === 'applications' ? <JobApplicationManager /> : <ClientManager />}
+      {activeTab === 'applications' ? <JobApplicationManager /> : <FallbackAdmin />}
     </div>
   )
 }
