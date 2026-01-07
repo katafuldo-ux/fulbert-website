@@ -23,7 +23,7 @@ function App() {
     city: '',
     country: 'Togo'
   })
-  const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle')
+  const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error' | 'loading'>('idle')
 
   // Système de suivi des visiteurs simple (sans localStorage)
   useEffect(() => {
@@ -73,10 +73,12 @@ function App() {
     }
 
     try {
-      setSubmitStatus('success')
+      setSubmitStatus('loading')
       
       // Envoyer les données à GitHub via l'API
-      await GitHubAPI.createApplicationIssue(formData)
+      console.log('Envoi de la candidature...', formData)
+      const result = await GitHubAPI.createApplicationIssue(formData)
+      console.log('Succès:', result)
       
       // Afficher un message de succès
       alert('Candidature envoyée avec succès ! Vous recevrez une confirmation par email.')
@@ -99,13 +101,14 @@ function App() {
         country: 'Togo'
       })
       
-      setTimeout(() => setSubmitStatus('idle'), 5000)
+      setSubmitStatus('success')
+      setTimeout(() => setSubmitStatus('idle'), 3000)
       
     } catch (error) {
       console.error('Erreur lors de l\'envoi de la candidature:', error)
       alert('Erreur lors de l\'envoi. Veuillez réessayer plus tard.')
       setSubmitStatus('error')
-      setTimeout(() => setSubmitStatus('idle'), 5000)
+      setTimeout(() => setSubmitStatus('idle'), 3000)
     }
   }
 

@@ -41,8 +41,16 @@ interface ClientRequestData {
 }
 
 class GitHubAPIService {
-  private getHeaders() {
+  private getHeaders(): Record<string, string> {
     const token = (import.meta as any).env?.VITE_GITHUB_TOKEN || 'ghp_YOUR_TOKEN_HERE'
+    
+    // Si pas de token valide, utiliser mode démo
+    if (token === 'ghp_YOUR_TOKEN_HERE') {
+      return {
+        'Content-Type': 'application/json',
+        'X-Demo-Mode': 'true'
+      }
+    }
     
     return {
       'Authorization': `token ${token}`,
@@ -51,7 +59,36 @@ class GitHubAPIService {
     }
   }
 
+  private isDemoMode(): boolean {
+    const token = (import.meta as any).env?.VITE_GITHUB_TOKEN || 'ghp_YOUR_TOKEN_HERE'
+    return token === 'ghp_YOUR_TOKEN_HERE'
+  }
+
+  private createDemoIssue(data: any): any {
+    return {
+      id: Math.floor(Math.random() * 1000000),
+      title: data.title || `Issue de démo`,
+      body: data.body || 'Contenu de démo',
+      state: 'open',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      labels: data.labels || [],
+      user: { login: 'demo-user' }
+    }
+  }
+
   async createApplicationIssue(data: ApplicationData): Promise<any> {
+    // Mode démo si pas de token
+    if (this.isDemoMode()) {
+      console.log('Mode démo: Simulation de création de candidature', data)
+      const demoIssue = this.createDemoIssue({
+        title: `Candidature: ${data.position} - ${data.fullName}`,
+        body: this.formatApplicationBody(data),
+        labels: ['candidature', data.position, data.experience || '0-1']
+      })
+      return demoIssue
+    }
+
     const issueBody = this.formatApplicationBody(data)
     
     const issue: GitHubIssue = {
@@ -114,6 +151,24 @@ class GitHubAPIService {
   }
 
   async getIssues(labels: string[] = []): Promise<any[]> {
+    // Mode démo si pas de token
+    if (this.isDemoMode()) {
+      console.log('Mode démo: Simulation de récupération des issues')
+      // Retourner des données de démo
+      return [
+        this.createDemoIssue({
+          title: 'Candidature de démo - Ingénieur Électricien',
+          body: 'Ceci est une candidature de démonstration',
+          labels: ['candidature', 'Ingénieur', '3-5']
+        }),
+        this.createDemoIssue({
+          title: 'Demande client de démo - Installation électrique',
+          body: 'Ceci est une demande client de démonstration',
+          labels: ['demande-client', 'service', 'urgent']
+        })
+      ]
+    }
+
     try {
       const labelQuery = labels.length > 0 ? `+labels:${labels.join(',')}` : ''
       const response = await fetch(

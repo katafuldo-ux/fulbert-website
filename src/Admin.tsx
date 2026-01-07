@@ -17,7 +17,8 @@ import {
   Menu,
   LogOut,
   Shield,
-  Building
+  Building,
+  Lock
 } from 'lucide-react'
 import GitHubAPI from './utils/githubAPI'
 
@@ -33,6 +34,8 @@ interface Application {
 }
 
 export default function Admin() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' })
   const [applications, setApplications] = useState<Application[]>([])
   const [clientRequests, setClientRequests] = useState<Application[]>([])
   const [activeTab, setActiveTab] = useState<'applications' | 'requests' | 'stats'>('applications')
@@ -43,8 +46,33 @@ export default function Admin() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    loadData()
+    // Vérifier si l'admin est déjà authentifié
+    const auth = localStorage.getItem('isAdminAuthenticated')
+    if (auth === 'true') {
+      setIsAuthenticated(true)
+      loadData()
+    }
   }, [])
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault()
+    
+    // Login simple (email: admin@fulbert.com, password: admin123)
+    if (loginForm.email === 'admin@fulbert.com' && loginForm.password === 'admin123') {
+      setIsAuthenticated(true)
+      localStorage.setItem('isAdminAuthenticated', 'true')
+      loadData()
+    } else {
+      alert('Identifiants incorrects')
+    }
+  }
+
+  const handleLogout = () => {
+    setIsAuthenticated(false)
+    localStorage.removeItem('isAdminAuthenticated')
+    setApplications([])
+    setClientRequests([])
+  }
 
   const loadData = async () => {
     try {
@@ -109,6 +137,65 @@ export default function Admin() {
     return state === 'open' ? <CheckCircle className="w-4 h-4" /> : <Clock className="w-4 h-4" />
   }
 
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="max-w-md w-full bg-white rounded-lg shadow-md p-8">
+          <div className="text-center mb-8">
+            <Shield className="w-12 h-12 text-blue-600 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-gray-900">Administration</h2>
+            <p className="text-gray-600">FULBERT-ASKY-INGÉNIERIE</p>
+          </div>
+          
+          <form onSubmit={handleLogin} className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Email
+              </label>
+              <input
+                type="email"
+                value={loginForm.email}
+                onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="admin@fulbert.com"
+                required
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Mot de passe
+              </label>
+              <input
+                type="password"
+                value={loginForm.password}
+                onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                placeholder="••••••••"
+                required
+              />
+            </div>
+            
+            <button
+              type="submit"
+              className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+            >
+              Se connecter
+            </button>
+          </form>
+          
+          <div className="mt-6 p-4 bg-blue-50 rounded-lg">
+            <p className="text-sm text-blue-800">
+              <strong>Identifiants de démo :</strong><br />
+              Email: admin@fulbert.com<br />
+              Mot de passe: admin123
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -140,8 +227,13 @@ export default function Admin() {
               >
                 Actualiser
               </button>
+              <button
+                onClick={handleLogout}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm"
+              >
+                Déconnexion
+              </button>
               <a href="#" className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-800">
-                <LogOut className="w-4 h-4" />
                 Retour
               </a>
             </div>
