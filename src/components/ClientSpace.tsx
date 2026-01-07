@@ -514,7 +514,7 @@ export default function ClientSpace() {
             )}
 
             <div className="mt-6 text-center">
-              <a href="/" className="text-blue-600 hover:text-blue-700 text-sm">
+              <a href="#" className="text-blue-600 hover:text-blue-700 text-sm">
                 ← Retour à l'accueil
               </a>
             </div>

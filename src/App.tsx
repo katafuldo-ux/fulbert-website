@@ -46,24 +46,6 @@ function App() {
         sessionStorage.setItem('sessionId', visitorData.sessionId)
         localStorage.setItem('visitCount', visitorData.visitCount.toString())
 
-        // Créer ou mettre à jour le compte visiteur
-        const existingAccounts = AccountManager.getAllAccounts()
-        const visitorAccount = existingAccounts.find((acc: any) => 
-          acc.userAgent === navigator.userAgent && 
-          acc.type === 'visitor'
-        )
-
-        if (!visitorAccount) {
-          // Créer un nouveau compte visiteur
-          AccountManager.createVisitorAccount(
-            `visiteur_${visitorData.sessionId}@example.com`,
-            `Visiteur ${visitorData.sessionId.slice(-8)}`
-          )
-        } else {
-          // Mettre à jour la connexion
-          AccountManager.updateLogin(visitorAccount.id)
-        }
-
         // Obtenir les statistiques existantes
         const statsStr = localStorage.getItem('websiteStats')
         let stats = statsStr ? JSON.parse(statsStr) : {
@@ -225,8 +207,8 @@ function App() {
               <a href="#cybersecurite" className="text-gray-700 hover:text-blue-600 transition-colors font-medium">Cybersécurité</a>
               <a href="#recrutement" className="text-gray-700 hover:text-blue-600 transition-colors font-medium">Recrutement</a>
               <a href="#contact" className="text-gray-700 hover:text-blue-600 transition-colors font-medium">Contact</a>
-              <a href="/client" className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium shadow-md hover:shadow-lg">Espace Client</a>
-              <a href="/admin" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-md hover:shadow-lg">Admin</a>
+              <a href="#client" className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors text-sm font-medium shadow-md hover:shadow-lg">Espace Client</a>
+              <a href="#admin" className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium shadow-md hover:shadow-lg">Admin</a>
             </div>
           </div>
         </div>
@@ -257,11 +239,11 @@ function App() {
             </div>
             <div className="relative">
               <img 
-                src="/images/ingenieur-masculin-analyse-le-systeme-de-l-industrie-40-dans-une-usine-de-fabrication-intelligente.jpg"
+                src="/fulbert-website/images/ingenieur-optim.jpg"
                 alt="Ingénieur électricien travaillant sur tableau de commande industriel"
                 className="rounded-2xl shadow-2xl w-full h-auto object-cover"
                 style={{ maxHeight: '400px' }}
-                onError={(e) => { e.currentTarget.src = '/images/888.jpeg'; }}
+                onError={(e) => { e.currentTarget.src = '/fulbert-website/images/888.jpeg'; }}
               />
               <div className="absolute -bottom-4 -right-4 bg-blue-600 text-white p-3 rounded-xl shadow-lg">
                 <Zap className="w-8 h-8" />
@@ -288,11 +270,11 @@ function App() {
                 <h3 className="text-2xl font-bold text-gray-900">Électricité du Bâtiment</h3>
               </div>
               <img 
-                src="/images/cablage-electrique-dans-construction_406939-16306.avif"
+                src="/fulbert-website/images/cablage-electrique-dans-construction_406939-16306.avif"
                 alt="Électricien professionnel câblage électrique dans bâtiment"
                 className="w-full h-48 object-cover rounded-lg mb-6 shadow-md"
                 style={{ objectPosition: 'center' }}
-                onError={(e) => { e.currentTarget.src = '/images/888.jpeg'; }}
+                onError={(e) => { e.currentTarget.src = '/fulbert-website/images/888.jpeg'; }}
               />
               <div className="mb-6">
                 <h4 className="font-semibold text-gray-900 mb-3">Nos Outils Spécialisés :</h4>
@@ -345,7 +327,7 @@ function App() {
                 <h3 className="text-2xl font-bold text-gray-900">Électricité Industrielle</h3>
               </div>
               <img 
-                src="/images/888.jpeg"
+                src="/fulbert-website/images/888.jpeg"
                 alt="Tableau électrique industriel avec automates programmables"
                 className="w-full h-48 object-cover rounded-lg mb-6 shadow-md"
                 style={{ objectPosition: 'center' }}
@@ -416,7 +398,7 @@ function App() {
               <Lock className="w-10 h-10 text-green-600 mb-4" />
               <h3 className="text-xl font-bold text-gray-900 mb-3">Sécurité des Systèmes</h3>
               <img 
-                src="/images/77.jpeg"
+                src="/fulbert-website/images/77.jpeg"
                 alt="Serveur de cybersécurité avec protection des données"
                 className="w-full h-32 object-cover rounded-lg mb-4 shadow-md"
                 style={{ objectPosition: 'center' }}
@@ -433,11 +415,11 @@ function App() {
               <Globe className="w-10 h-10 text-green-600 mb-4" />
               <h3 className="text-xl font-bold text-gray-900 mb-3">Sécurité Réseau</h3>
               <img 
-                src="/images/une-equipe-d-ingenieurs-noirs-comparant-des-modeles-de-panneaux-solaires-sur-un-ordinateur-portable.jpg"
+                src="/fulbert-website/images/equipe-ingenieurs-optim.jpg"
                 alt="Ingénieur cybersécurité travaillant sur infrastructure réseau"
                 className="w-full h-32 object-cover rounded-lg mb-4 shadow-md"
                 style={{ objectPosition: 'center' }}
-                onError={(e) => { e.currentTarget.src = '/images/77.jpeg'; }}
+                onError={(e) => { e.currentTarget.src = '/fulbert-website/images/77.jpeg'; }}
               />
               <ul className="space-y-2 text-gray-600">
                 <li>• Pare-feu et filtrage</li>
@@ -451,11 +433,11 @@ function App() {
               <Shield className="w-10 h-10 text-green-600 mb-4" />
               <h3 className="text-xl font-bold text-gray-900 mb-3">Protection des Données</h3>
               <img 
-                src="/images/equipe-noire-d-employes-de-l-usine-de-fabrication-reparant-les-erreurs-et-le-debogage.jpg"
+                src="/fulbert-website/images/equipe-noire-optim.jpg"
                 alt="Analyse de cybersécurité et protection des données"
                 className="w-full h-32 object-cover rounded-lg mb-4 shadow-md"
                 style={{ objectPosition: 'center' }}
-                onError={(e) => { e.currentTarget.src = '/images/88.jpeg'; }}
+                onError={(e) => { e.currentTarget.src = '/fulbert-website/images/88.jpeg'; }}
               />
               <ul className="space-y-2 text-gray-600">
                 <li>• Chiffrement des données</li>
@@ -512,7 +494,7 @@ function App() {
                 <h3 className="text-2xl font-bold text-gray-900">Pourquoi nous rejoindre ?</h3>
               </div>
               <img 
-                src="/images/image3.jpg"
+                src="/fulbert-website/images/image3.jpg"
                 alt="Équipe d'ingénieurs électriciens sur chantier technique"
                 className="w-full h-48 object-cover rounded-lg mb-6 shadow-md"
                 style={{ objectPosition: 'center' }}
@@ -525,8 +507,13 @@ function App() {
                     <p className="text-gray-600">Travaillez avec des experts reconnus</p>
                   </div>
                 </div>
+                <div className="mt-6 text-center">
+              <a href="#" className="text-blue-600 hover:text-blue-700 text-sm">
+                ← Retour à l'accueil
+              </a>
+            </div>
                 <div className="flex items-start">
-                  <Users className="w-6 h-6 text-blue-500 mr-3 mt-1" />
+                  <Shield className="w-6 h-6 text-green-500 mr-3 mt-1" />
                   <div>
                     <h4 className="font-semibold text-gray-900">Équipe Dynamique</h4>
                     <p className="text-gray-600">Ambiance collaborative et stimulante</p>
