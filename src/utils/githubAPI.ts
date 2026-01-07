@@ -42,8 +42,10 @@ interface ClientRequestData {
 
 class GitHubAPIService {
   private getHeaders() {
+    const token = (import.meta as any).env?.VITE_GITHUB_TOKEN || 'ghp_YOUR_TOKEN_HERE'
+    
     return {
-      'Authorization': `token ${GITHUB_TOKEN}`,
+      'Authorization': `token ${token}`,
       'Accept': 'application/vnd.github.v3+json',
       'Content-Type': 'application/json'
     }
@@ -69,7 +71,9 @@ class GitHubAPIService {
       )
 
       if (!response.ok) {
-        throw new Error(`GitHub API Error: ${response.status}`)
+        const errorData = await response.json()
+        console.error('GitHub API Error Details:', errorData)
+        throw new Error(`GitHub API Error: ${response.status} - ${errorData.message || 'Unknown error'}`)
       }
 
       return await response.json()
@@ -120,7 +124,9 @@ class GitHubAPIService {
       )
 
       if (!response.ok) {
-        throw new Error(`GitHub API Error: ${response.status}`)
+        const errorData = await response.json()
+        console.error('GitHub API Error Details:', errorData)
+        throw new Error(`GitHub API Error: ${response.status} - ${errorData.message || 'Unknown error'}`)
       }
 
       return await response.json()
