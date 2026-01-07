@@ -30,9 +30,7 @@ import {
   MapPin
 } from 'lucide-react'
 import { sanitizeInput, validateEmail, validatePhone } from '../utils/security'
-import AccountManager from '../utils/accountManager'
-import ApiService from '../utils/apiService'
-import dataPersistence from '../utils/dataPersistence'
+import GitHubAPI from '../utils/githubAPI'
 
 interface Client {
   id: string
@@ -126,23 +124,16 @@ export default function ClientSpace() {
 
   const loadClientRequests = async (clientId: string) => {
     try {
-      // Utiliser l'API pour charger les demandes du client
-      const allRequests = await ApiService.getClientRequests();
-      const clientRequests = allRequests.filter((req: ServiceRequest) => req.clientId === clientId);
+      // Utiliser l'API GitHub pour charger les demandes du client
+      const allRequests = await GitHubAPI.getClientRequests();
+      // Filtrer par clientId dans le corps de l'issue
+      const clientRequests = allRequests.filter((req: any) => 
+        req.body.includes(`ID Client**: ${clientId}`)
+      );
       setRequests(clientRequests);
     } catch (error) {
       console.error('Erreur lors du chargement des demandes:', error);
-      // Fallback sur localStorage
-      try {
-        const storedData = localStorage.getItem('clientRequests');
-        if (storedData) {
-          const parsedData = JSON.parse(storedData);
-          const clientRequests = parsedData.filter((req: ServiceRequest) => req.clientId === clientId);
-          setRequests(clientRequests);
-        }
-      } catch (fallbackError) {
-        console.error('Erreur lors du fallback:', fallbackError);
-      }
+      setRequests([]);
     }
   }
 
@@ -173,15 +164,11 @@ export default function ClientSpace() {
     }
 
     try {
-      // Créer le compte client
-      const account = AccountManager.createAccount(
-        formData.email,
-        formData.fullName,
-        formData.phone
-      )
+      // Générer un ID client unique
+      const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
 
       const clientData: Client = {
-        id: account.id,
+        id: clientId,
         email: formData.email,
         fullName: formData.fullName,
         phone: formData.phone,
@@ -189,20 +176,12 @@ export default function ClientSpace() {
         address: formData.address,
         city: formData.city,
         country: formData.country,
-        createdAt: account.createdAt,
-        lastLogin: account.lastLogin,
-        status: 'active'
+        createdAt: new Date().toISOString(),
+        lastLogin: new Date().toISOString(),
+        status: 'active' as const
       }
 
-      // Sauvegarder le client via l'API
-      await ApiService.saveClient(clientData);
-      
-      // Aussi sauvegarder en localStorage pour fallback
-      const clients = JSON.parse(localStorage.getItem('clients') || '[]')
-      clients.push(clientData)
-      localStorage.setItem('clients', JSON.stringify(clients))
-
-      // Créer la session
+      // Créer la session client simple
       const sessionData = {
         client: clientData,
         loginTime: Date.now(),
@@ -244,24 +223,34 @@ export default function ClientSpace() {
     setIsLoggingIn(true)
 
     try {
-      const clients = JSON.parse(localStorage.getItem('clients') || '[]')
-      const client = clients.find((c: Client) => c.email === loginForm.email)
-
-      if (client) {
-        // Mettre à jour la connexion
-        AccountManager.recordLogin(client.id);
+      // Simulation simple de login (sans base de données)
+      if (loginForm.email && loginForm.password) {
+        const clientId = `client_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+        
+        const clientData: Client = {
+          id: clientId,
+          email: loginForm.email,
+          fullName: 'Client',
+          phone: '+228 XX XX XX XX',
+          address: 'À compléter',
+          city: 'Lomé',
+          country: 'Togo',
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString(),
+          status: 'active'
+        }
         
         // Créer la session
         const sessionData = {
-          client: client,
+          client: clientData,
           loginTime: Date.now(),
           expiresAt: Date.now() + (24 * 60 * 60 * 1000) // 24 heures
         }
         localStorage.setItem('clientSession', JSON.stringify(sessionData))
 
-        setCurrentUser(client)
+        setCurrentUser(clientData)
         setShowLoginForm(false)
-        loadClientRequests(client.id)
+        loadClientRequests(clientData.id)
         setSubmitStatus('success')
         
         setLoginForm({ email: '', password: '' })
@@ -293,28 +282,20 @@ export default function ClientSpace() {
 
     if (!currentUser) return
 
-    const newRequest: ServiceRequest = {
-      id: Date.now().toString(),
-      clientId: currentUser.id,
-      type: newRequestForm.type,
-      title: sanitizeInput(newRequestForm.title),
-      description: sanitizeInput(newRequestForm.description),
-      urgency: newRequestForm.urgency,
-      status: 'pending',
-      budget: newRequestForm.budget,
-      deadline: newRequestForm.deadline,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      responses: []
-    }
-
     try {
-      // Sauvegarder via l'API
-      await ApiService.saveClientRequest(newRequest);
-      
-      // Mettre à jour l'état local
-      const updatedRequests = [...requests, newRequest];
-      setRequests(updatedRequests);
+      // Envoyer les données à GitHub via l'API
+      await GitHubAPI.createClientRequestIssue({
+        clientId: currentUser.id,
+        type: newRequestForm.type,
+        title: newRequestForm.title,
+        description: newRequestForm.description,
+        urgency: newRequestForm.urgency,
+        budget: newRequestForm.budget,
+        deadline: newRequestForm.deadline,
+        clientName: currentUser.fullName,
+        clientEmail: currentUser.email,
+        clientPhone: currentUser.phone
+      })
       
       setNewRequestForm({
         type: 'service',
@@ -327,6 +308,9 @@ export default function ClientSpace() {
       setActiveTab('requests');
       setSubmitStatus('success');
       setTimeout(() => setSubmitStatus('idle'), 3000);
+      
+      // Recharger les demandes
+      loadClientRequests(currentUser.id);
     } catch (error) {
       console.error('Erreur lors de la création de la demande:', error);
       setSubmitStatus('error');

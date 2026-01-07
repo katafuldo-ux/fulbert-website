@@ -3,9 +3,8 @@ import { Phone, Mail, Zap, Shield, Wrench, Building, Factory, Lock, Globe, Check
 import Logo from './components/Logo'
 import MigrationHelper from './components/MigrationHelper'
 import DebugPanel from './components/DebugPanel'
-import { sanitizeInput, validateEmail, validatePhone, validateIdNumber, encryptData, decryptData } from './utils/security'
-import AccountManager from './utils/accountManager'
-import ApiService from './utils/apiService'
+import { sanitizeInput, validateEmail, validatePhone, validateIdNumber } from './utils/security'
+import GitHubAPI from './utils/githubAPI'
 
 function App() {
   const [formData, setFormData] = useState({
@@ -26,66 +25,13 @@ function App() {
   })
   const [submitStatus, setSubmitStatus] = useState<'idle' | 'success' | 'error'>('idle')
 
-  // Système de suivi des visiteurs et création de comptes
+  // Système de suivi des visiteurs simple (sans localStorage)
   useEffect(() => {
     const trackVisitor = () => {
       try {
-        // Obtenir les informations du visiteur
-        const visitorData = {
-          timestamp: new Date().toISOString(),
-          userAgent: navigator.userAgent || 'Unknown',
-          language: navigator.language || 'Unknown',
-          platform: navigator.platform || 'Unknown',
-          screenResolution: `${screen.width}x${screen.height}`,
-          referrer: document.referrer || 'direct',
-          sessionId: sessionStorage.getItem('sessionId') || generateSessionId(),
-          visitCount: parseInt(localStorage.getItem('visitCount') || '0') + 1
-        }
-
-        // Sauvegarder la session
-        sessionStorage.setItem('sessionId', visitorData.sessionId)
-        localStorage.setItem('visitCount', visitorData.visitCount.toString())
-
-        // Obtenir les statistiques existantes
-        const statsStr = localStorage.getItem('websiteStats')
-        let stats = statsStr ? JSON.parse(statsStr) : {
-          visitors: [],
-          totalVisits: 0,
-          uniqueVisitors: new Set()
-        }
-        
-        if (!stats.visitors) stats.visitors = []
-        if (!stats.totalVisits) stats.totalVisits = 0
-        
-        stats.totalVisits++
-        
-        // Convertir Set en array pour JSON
-        if (stats.uniqueVisitors && Array.isArray(stats.uniqueVisitors)) {
-          stats.uniqueVisitors = new Set(stats.uniqueVisitors)
-        } else if (!stats.uniqueVisitors) {
-          stats.uniqueVisitors = new Set()
-        }
-        
-        stats.uniqueVisitors.add(visitorData.sessionId)
-        stats.visitors.unshift(visitorData)
-        
-        // Garder seulement les 1000 derniers visiteurs
-        if (stats.visitors.length > 1000) {
-          stats.visitors = stats.visitors.slice(0, 1000)
-        }
-        
-        stats.lastUpdated = new Date().toISOString()
-        stats.uniqueVisitorCount = stats.uniqueVisitors.size
-        
-        // Convertir Set en array pour le stockage
-        const statsToStore = {
-          ...stats,
-          uniqueVisitors: Array.from(stats.uniqueVisitors)
-        }
-        
-        localStorage.setItem('websiteStats', JSON.stringify(statsToStore))
+        console.log('Visiteur tracking - données non stockées localement')
+        // Optionnel: envoyer des statistiques à Google Analytics ou autre service
       } catch (error) {
-        // Silencer les erreurs pour ne pas bloquer l'expérience utilisateur
         console.debug('Tracking info:', error)
       }
     }
@@ -107,7 +53,7 @@ function App() {
     })
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     
     // Validation des données avant soumission
@@ -125,69 +71,42 @@ function App() {
       alert('Numéro CNI invalide')
       return
     }
-    
-    const application = {
-      id: Date.now().toString(),
-      ...formData,
-      status: 'pending',
-      submittedAt: new Date().toLocaleString('fr-TG')
-    }
-    
-    // Chiffrer les données sensibles avant stockage
+
     try {
-      const existingData = localStorage.getItem('jobApplications')
-      let existingApplications = []
+      setSubmitStatus('success')
       
-      // Essayer de déchiffrer les données existantes
-      if (existingData) {
-        try {
-          const decryptedData = decryptData(existingData)
-          existingApplications = JSON.parse(decryptedData)
-        } catch (decryptError) {
-          // Si le déchiffrement échoue, essayer de lire directement (compatibilité)
-          try {
-            existingApplications = JSON.parse(existingData)
-          } catch (parseError) {
-            existingApplications = []
-          }
-        }
-      }
+      // Envoyer les données à GitHub via l'API
+      await GitHubAPI.createApplicationIssue(formData)
       
-      const updatedApplications = [...existingApplications, application]
-      const encryptedData = encryptData(JSON.stringify(updatedApplications))
-      localStorage.setItem('jobApplications', encryptedData)
+      // Afficher un message de succès
+      alert('Candidature envoyée avec succès ! Vous recevrez une confirmation par email.')
       
-      // Aussi sauvegarder une copie non chiffrée pour le debug
-      localStorage.setItem('jobApplications_debug', JSON.stringify(updatedApplications))
+      // Réinitialiser le formulaire
+      setFormData({
+        fullName: '',
+        idNumber: '',
+        email: '',
+        phone: '',
+        position: '',
+        experience: '',
+        education: '',
+        skills: '',
+        motivation: '',
+        availability: '',
+        salary: '',
+        address: '',
+        city: '',
+        country: 'Togo'
+      })
+      
+      setTimeout(() => setSubmitStatus('idle'), 5000)
       
     } catch (error) {
-      console.error('Erreur lors du stockage des données:', error)
-      // En cas d'erreur, sauvegarder sans chiffrement
-      const existingData = localStorage.getItem('jobApplications') || '[]'
-      const existingApplications = JSON.parse(existingData)
-      const updatedApplications = [...existingApplications, application]
-      localStorage.setItem('jobApplications', JSON.stringify(updatedApplications))
+      console.error('Erreur lors de l\'envoi de la candidature:', error)
+      alert('Erreur lors de l\'envoi. Veuillez réessayer plus tard.')
+      setSubmitStatus('error')
+      setTimeout(() => setSubmitStatus('idle'), 5000)
     }
-    
-    setSubmitStatus('success')
-    setFormData({
-      fullName: '',
-      idNumber: '',
-      email: '',
-      phone: '',
-      position: '',
-      experience: '',
-      education: '',
-      skills: '',
-      motivation: '',
-      availability: '',
-      salary: '',
-      address: '',
-      city: '',
-      country: 'Togo'
-    })
-    
-    setTimeout(() => setSubmitStatus('idle'), 5000)
   }
 
   return (
