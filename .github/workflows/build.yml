@@ -25,7 +25,7 @@ jobs:
       env:
         VITE_GITHUB_TOKEN: ${{ secrets.VITE_GITHUB_TOKEN }}
       run: |
-        echo "Building with token from environment"
+        echo "Building with token from GitHub secrets"
         echo "Token available: $VITE_GITHUB_TOKEN"
         npm run build
 
