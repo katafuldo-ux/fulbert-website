@@ -186,9 +186,8 @@ export default function Admin() {
           
           <div className="mt-6 p-4 bg-blue-50 rounded-lg">
             <p className="text-sm text-blue-800">
-              <strong>Identifiants de démo :</strong><br />
-              Email: admin@fulbert.com<br />
-              Mot de passe: admin123
+              <strong>Connexion administrateur requise</strong><br />
+              Veuillez contacter l'administrateur du site pour obtenir les identifiants.
             </p>
           </div>
         </div>
