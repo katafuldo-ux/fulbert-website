@@ -26,7 +26,11 @@ jobs:
         echo "🔍 Debug - VITE_GITHUB_TOKEN secret exists: ${{ secrets.VITE_GITHUB_TOKEN != '' }}"
         echo "VITE_GITHUB_TOKEN=${{ secrets.VITE_GITHUB_TOKEN }}" > .env
         echo "📁 .env file created:"
-        cat .env
+        cat .env || echo "No .env file found"
+        echo "🔍 Debug - Current directory:"
+        pwd
+        echo "🔍 Debug - Files in directory:"
+        ls -la
 
     - name: Build
       run: npm run build
