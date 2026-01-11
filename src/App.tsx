@@ -104,7 +104,7 @@ function App() {
       
     } catch (error) {
       console.error('Erreur lors de l\'envoi de la candidature:', error)
-      alert('Erreur lors de l\'envoi. Veuillez réessayer plus tard.')
+      alert('Erreur lors de l\'envoi. Veuillez configurer le token GitHub ou réessayer plus tard.')
       setSubmitStatus('error')
       setTimeout(() => setSubmitStatus('idle'), 3000)
     }

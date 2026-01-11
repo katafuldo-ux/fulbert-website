@@ -297,6 +297,8 @@ export default function ClientSpace() {
         clientPhone: currentUser.phone
       })
       
+      alert('Demande envoyée avec succès !')
+      
       setNewRequestForm({
         type: 'service',
         title: '',
@@ -313,6 +315,7 @@ export default function ClientSpace() {
       loadClientRequests(currentUser.id);
     } catch (error) {
       console.error('Erreur lors de la création de la demande:', error);
+      alert('Erreur lors de l\'envoi. Veuillez configurer le token GitHub ou réessayer plus tard.');
       setSubmitStatus('error');
       setTimeout(() => setSubmitStatus('idle'), 3000);
     }
