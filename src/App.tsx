@@ -764,10 +764,11 @@ function App() {
               </div>
               <h3 className="text-xl font-bold text-gray-900 text-center mb-4">Appel d'Urgence</h3>
               <img 
-                src="/images/4.jpeg"
+                src="/fulbert-website/images/4.jpeg"
                 alt="Technicien électricien en intervention d'urgence"
                 className="w-full h-32 object-cover rounded-lg mb-4 shadow-md"
                 style={{ objectPosition: 'center' }}
+                onError={(e) => { e.currentTarget.src = '/fulbert-website/images/888.jpeg'; }}
               />
               <div className="text-center space-y-2">
                 <p className="text-2xl font-bold text-blue-600">+228 70 87 22 84</p>
@@ -786,10 +787,11 @@ function App() {
               </div>
               <h3 className="text-xl font-bold text-gray-900 text-center mb-4">Consultation Gratuite</h3>
               <img 
-                src="/images/images.jpeg"
+                src="/fulbert-website/images/images.jpeg"
                 alt="Ingénieur consultant en bureau technique"
                 className="w-full h-32 object-cover rounded-lg mb-4 shadow-md"
                 style={{ objectPosition: 'center' }}
+                onError={(e) => { e.currentTarget.src = '/fulbert-website/images/888.jpeg'; }}
               />
               <div className="text-center space-y-2">
                 <p className="text-xl font-bold text-green-600">katafuldo@gmail.com</p>
@@ -810,10 +812,11 @@ function App() {
               </div>
               <h3 className="text-xl font-bold text-gray-900 text-center mb-4">Services Rapides</h3>
               <img 
-                src="/images/groupe-electrogene.jpeg"
+                src="/fulbert-website/images/groupe-electrogene.jpeg"
                 alt="Ingénieur technique avec équipements de diagnostic"
                 className="w-full h-32 object-cover rounded-lg mb-4 shadow-md"
                 style={{ objectPosition: 'center' }}
+                onError={(e) => { e.currentTarget.src = '/fulbert-website/images/888.jpeg'; }}
               />
               <div className="text-center space-y-2">
                 <div className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-sm inline-block">
