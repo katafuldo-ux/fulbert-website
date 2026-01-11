@@ -5,6 +5,10 @@ const GITHUB_TOKEN = (import.meta as any).env?.VITE_GITHUB_TOKEN
 const REPO_OWNER = 'katafuldo-ux'
 const REPO_NAME = 'fulbert-website'
 
+// Debug: Vérifier si le token est disponible
+console.log('🔍 Debug - Token GitHub disponible:', !!GITHUB_TOKEN)
+console.log('🔍 Debug - Token format:', GITHUB_TOKEN ? GITHUB_TOKEN.substring(0, 10) + '...' : 'undefined')
+
 // Vérification du token
 if (!GITHUB_TOKEN || GITHUB_TOKEN === 'ghp_YOUR_GITHUB_TOKEN_HERE') {
   console.error('⚠️ Token GitHub non configuré ! Veuillez suivre les instructions dans README-GITHUB-TOKEN.md')
@@ -124,24 +128,31 @@ class GitHubAPIService {
   }
 
   async getIssues(labels: string[] = []): Promise<any[]> {
+    console.log('🔍 Debug - getIssues appelé avec labels:', labels)
+    
     try {
       const labelQuery = labels.length > 0 ? `+labels:${labels.join(',')}` : ''
-      const response = await fetch(
-        `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues?state=all${labelQuery}`,
-        {
-          headers: this.getHeaders()
-        }
-      )
+      const url = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/issues?state=all${labelQuery}`
+      console.log('🔍 Debug - URL appelée:', url)
+      
+      const response = await fetch(url, {
+        headers: this.getHeaders()
+      })
+
+      console.log('🔍 Debug - Response status:', response.status)
+      console.log('🔍 Debug - Response ok:', response.ok)
 
       if (!response.ok) {
         const errorData = await response.json()
-        console.error('GitHub API Error Details:', errorData)
+        console.error('🔍 Debug - GitHub API Error Details:', errorData)
         throw new Error(`GitHub API Error: ${response.status} - ${errorData.message || 'Unknown error'}`)
       }
 
-      return await response.json()
+      const data = await response.json()
+      console.log('🔍 Debug - Données reçues:', data.length, 'issues')
+      return data
     } catch (error) {
-      console.error('Erreur récupération issues:', error)
+      console.error('🔍 Debug - Erreur complète:', error)
       throw error
     }
   }
