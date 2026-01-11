@@ -1,8 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Phone, Mail, Zap, Shield, Wrench, Building, Factory, Lock, Globe, CheckCircle, Power, Settings, Cpu, Database, User, Send, Clock, FileText, Briefcase, Users, Award, AlertTriangle, Wifi, Server, Cloud } from 'lucide-react'
 import Logo from './components/Logo'
-import MigrationHelper from './components/MigrationHelper'
-import DebugPanel from './components/DebugPanel'
 import { sanitizeInput, validateEmail, validatePhone, validateIdNumber } from './utils/security'
 import GitHubAPI from './utils/githubAPI'
 
@@ -114,8 +112,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-white">
-      <MigrationHelper />
-      <DebugPanel />
       {/* Navigation */}
       <nav className="fixed top-0 w-full bg-white/90 backdrop-blur-md z-50 border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
