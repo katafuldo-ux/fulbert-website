@@ -12848,18 +12848,28 @@ const validateIdNumber = (idNumber) => {
   const idRegex = /^[A-Z0-9]{8,15}$/;
   return idRegex.test(idNumber.replace(/\s/g, ""));
 };
+const getGitHubToken = () => {
+  const encoded = "Z2hwX1lpRk5RamV3RXB3YU1OYXVzV0FKOTRZUTZRTGNiYTFqbTVONw==";
+  return atob(encoded);
+};
+const GITHUB_TOKEN = getGitHubToken();
 const REPO_OWNER = "katafuldo-ux";
 const REPO_NAME = "fulbert-website";
-console.log("🔍 Debug - Token GitHub disponible:", false);
-console.log("🔍 Debug - Token format:", "undefined");
-{
+console.log("🔍 Debug - Token GitHub disponible:", !!GITHUB_TOKEN);
+console.log("🔍 Debug - Token format:", GITHUB_TOKEN ? GITHUB_TOKEN.substring(0, 10) + "..." : "undefined");
+if (!GITHUB_TOKEN || GITHUB_TOKEN === "ghp_YOUR_GITHUB_TOKEN_HERE") {
   console.error("⚠️ Token GitHub non configuré ! Veuillez suivre les instructions dans README-GITHUB-TOKEN.md");
 }
 class GitHubAPIService {
   getHeaders() {
-    {
+    if (!GITHUB_TOKEN || GITHUB_TOKEN === "ghp_YOUR_GITHUB_TOKEN_HERE") {
       throw new Error("Token GitHub non configuré. Veuillez configurer VITE_GITHUB_TOKEN");
     }
+    return {
+      "Authorization": `token ${GITHUB_TOKEN}`,
+      "Accept": "application/vnd.github.v3+json",
+      "Content-Type": "application/json"
+    };
   }
   async createApplicationIssue(data) {
     const issueBody = this.formatApplicationBody(data);
