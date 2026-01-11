@@ -13725,10 +13725,13 @@ function App() {
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             "img",
             {
-              src: "/images/4.jpeg",
+              src: "/fulbert-website/images/4.jpeg",
               alt: "Technicien électricien en intervention d'urgence",
               className: "w-full h-32 object-cover rounded-lg mb-4 shadow-md",
-              style: { objectPosition: "center" }
+              style: { objectPosition: "center" },
+              onError: (e) => {
+                e.currentTarget.src = "/fulbert-website/images/888.jpeg";
+              }
             }
           ),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center space-y-2", children: [
@@ -13743,10 +13746,13 @@ function App() {
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             "img",
             {
-              src: "/images/images.jpeg",
+              src: "/fulbert-website/images/images.jpeg",
               alt: "Ingénieur consultant en bureau technique",
               className: "w-full h-32 object-cover rounded-lg mb-4 shadow-md",
-              style: { objectPosition: "center" }
+              style: { objectPosition: "center" },
+              onError: (e) => {
+                e.currentTarget.src = "/fulbert-website/images/888.jpeg";
+              }
             }
           ),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center space-y-2", children: [
@@ -13761,10 +13767,13 @@ function App() {
           /* @__PURE__ */ jsxRuntimeExports.jsx(
             "img",
             {
-              src: "/images/groupe-electrogene.jpeg",
+              src: "/fulbert-website/images/groupe-electrogene.jpeg",
               alt: "Ingénieur technique avec équipements de diagnostic",
               className: "w-full h-32 object-cover rounded-lg mb-4 shadow-md",
-              style: { objectPosition: "center" }
+              style: { objectPosition: "center" },
+              onError: (e) => {
+                e.currentTarget.src = "/fulbert-website/images/888.jpeg";
+              }
             }
           ),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { className: "text-center space-y-2", children: [
