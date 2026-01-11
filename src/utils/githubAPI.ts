@@ -86,6 +86,12 @@ class GitHubAPIService {
         body: this.formatApplicationBody(data),
         labels: ['candidature', data.position, data.experience || '0-1']
       })
+      
+      // Sauvegarder en localStorage pour la démo
+      const storedApps = JSON.parse(localStorage.getItem('demo_applications') || '[]')
+      storedApps.push(demoIssue)
+      localStorage.setItem('demo_applications', JSON.stringify(storedApps))
+      
       return demoIssue
     }
 
@@ -154,19 +160,110 @@ class GitHubAPIService {
     // Mode démo si pas de token
     if (this.isDemoMode()) {
       console.log('Mode démo: Simulation de récupération des issues')
-      // Retourner des données de démo
-      return [
-        this.createDemoIssue({
-          title: 'Candidature de démo - Ingénieur Électricien',
-          body: 'Ceci est une candidature de démonstration',
-          labels: ['candidature', 'Ingénieur', '3-5']
-        }),
-        this.createDemoIssue({
-          title: 'Demande client de démo - Installation électrique',
-          body: 'Ceci est une demande client de démonstration',
-          labels: ['demande-client', 'service', 'urgent']
-        })
-      ]
+      
+      // Récupérer les données démo du localStorage
+      const storedApps = JSON.parse(localStorage.getItem('demo_applications') || '[]')
+      const storedRequests = JSON.parse(localStorage.getItem('demo_requests') || '[]')
+      
+      // Combiner données démo + données stockées
+      let demoData = [...storedApps, ...storedRequests]
+      
+      // Si pas de données stockées, utiliser les données par défaut
+      if (demoData.length === 0) {
+        if (labels.includes('candidature')) {
+          demoData = [
+            this.createDemoIssue({
+              title: 'Candidature de démo - Ingénieur Électricien',
+              body: `## 📋 CANDIDATURE SPONTANÉE
+
+### 👤 Informations Personnelles
+- **Nom Complet**: Jean Dupont
+- **Email**: jean.dupont@email.com
+- **Téléphone**: +228 90 12 34 56
+- **Numéro CNI**: 1234567890123
+
+### 💼 Position Recherchée
+- **Poste**: Ingénieur Électricien
+- **Expérience**: 3-5 ans
+- **Niveau d'études**: Master
+
+### 🎯 Compétences et Motivation
+- **Compétences**: Électricité industrielle, Automatisation, CAO
+- **Motivation**: Passionné par les projets industriels
+- **Disponibilité**: Immédiate
+
+---
+*Soumis le: ${new Date().toLocaleDateString('fr-TG')}*
+*Statut: En attente de traitement*`,
+              labels: ['candidature', 'Ingénieur', '3-5']
+            }),
+            this.createDemoIssue({
+              title: 'Candidature de démo - Technicien Cybersécurité',
+              body: `## 📋 CANDIDATURE SPONTANÉE
+
+### 👤 Informations Personnelles
+- **Nom Complet**: Marie Kouma
+- **Email**: marie.kouma@email.com
+- **Téléphone**: +228 91 23 45 67
+- **Numéro CNI**: 9876543210987
+
+### 💼 Position Recherchée
+- **Poste**: Technicien Cybersécurité
+- **Expérience**: 1-2 ans
+- **Niveau d'études**: Licence
+
+### 🎯 Compétences et Motivation
+- **Compétences**: Sécurité réseau, Audit, Antivirus
+- **Motivation**: Intéressée par la protection des systèmes
+- **Disponibilité**: 1 mois
+
+---
+*Soumis le: ${new Date().toLocaleDateString('fr-TG')}*
+*Statut: En attente de traitement*`,
+              labels: ['candidature', 'Technicien', '1-2']
+            })
+          ]
+        }
+        
+        if (labels.includes('demande-client')) {
+          demoData = demoData.concat([
+            this.createDemoIssue({
+              title: 'Demande client de démo - Installation électrique',
+              body: `## 📝 DEMANDE CLIENT
+
+### 👤 Informations Client
+- **Nom**: Entreprise ABC
+- **Email**: contact@entreprise-abc.tg
+- **Téléphone**: +228 22 33 44 55
+- **ID Client**: client_123456
+
+### 📋 Détails de la Demande
+- **Type**: service
+- **Titre**: Installation électrique complète
+- **Description**: Installation du système électrique pour notre nouveau bâtiment de 500m²
+- **Urgence**: urgent
+
+### 💰 Informations Complémentaires
+- **Budget**: 2.000.000 FCFA
+- **Délai**: 1 mois
+
+---
+*Soumis le: ${new Date().toLocaleDateString('fr-TG')}*
+*Statut: En attente de traitement*`,
+              labels: ['demande-client', 'service', 'urgent']
+            })
+          ])
+        }
+      }
+      
+      // Filtrer par labels si demandé
+      if (labels.length > 0) {
+        demoData = demoData.filter((item: any) => 
+          labels.some(label => item.labels.some((l: any) => l.name === label))
+        )
+      }
+      
+      return demoData
     }
 
     try {
